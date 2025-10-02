@@ -1,0 +1,39 @@
+# Sensitive files - DO NOT COMMIT
+# These files may contain passwords, personal data, or secrets
+*-personal.json                  # Personal configuration files
+config-personal/                 # Personal config directory
+
+# Note: autounattend.xml IS committed (passwords left blank, Windows prompts during install)
+
+# Build outputs
+build/
+output/
+dist/
+*.iso                            # Generated Windows ISOs
+*.wim                            # Windows image files
+*.esd                            # Windows image files
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.log
+install.log
+
+# Downloaded tools
+oscdimg.exe
+Sophia-Script/                   # Downloaded Sophia Script (download fresh each time)
+
+# System files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Personal apps list (keep template, not personal list)
+apps.json                        # Your personal app list - don't commit
+# Use apps-template.json instead for sharing
