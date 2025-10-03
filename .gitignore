@@ -35,5 +35,6 @@ desktop.ini
 *~
 
 # Personal apps list (keep template, not personal list)
-apps.json                        # Your personal app list - don't commit
+# Your personal app list - don't commit
 # Use apps-template.json instead for sharing
+apps.json

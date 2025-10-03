@@ -95,6 +95,30 @@ winget search firefox
 winget show Mozilla.Firefox
 ```
 
+### 5. Test Sophia Script Locally (Optional)
+
+If you want to test OS tweaks before automation:
+
+```powershell
+# 1. Download Sophia Script for Windows 11
+Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/latest/download/Sophia.Script.for.Windows.11.v6.9.1.zip" -OutFile "SophiaScript.zip"
+
+# 2. Extract the archive
+Expand-Archive -Path "SophiaScript.zip" -DestinationPath ".\SophiaScript" -Force
+
+# 3. Copy the preset file to Sophia folder
+Copy-Item ".\Sophia-Preset.ps1" -Destination ".\SophiaScript\"
+
+# 4. Run with custom preset (as Administrator)
+cd .\SophiaScript
+.\Sophia.ps1 -Preset .\Sophia-Preset.ps1
+```
+
+**Important:**
+- Always test in a VM first before running on your main PC
+- Review `Sophia-Preset.ps1` and customize it for your needs
+- Requires Administrator privileges
+
 ---
 
 ## Project Structure
@@ -108,6 +132,7 @@ declarative-windows/
 ├── brainstorm.md          # Design discussions
 │
 ├── apps.json              # Your WinGet package list (create this)
+├── Sophia-Preset.ps1      # Custom Sophia Script configuration
 ├── autounattend.xml       # Windows unattended install config
 ├── bootstrap.ps1          # Main orchestration script (planned)
 ├── build-iso.ps1          # ISO generation script (planned)

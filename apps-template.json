@@ -1,0 +1,74 @@
+{
+  "$schema": "https://aka.ms/winget-packages.schema.2.0.json",
+  "CreationDate": "2025-10-03T21:54:28.961-00:00",
+  "Sources": [
+    {
+      "Packages": [
+        {
+          "PackageIdentifier": "7zip.7zip"
+        },
+        {
+          "PackageIdentifier": "CPUID.CPU-Z"
+        },
+        {
+          "PackageIdentifier": "Git.Git"
+        },
+        {
+          "PackageIdentifier": "REALiX.HWiNFO"
+        },
+        {
+          "PackageIdentifier": "nepnep.neofetch-win"
+        },
+        {
+          "PackageIdentifier": "CodeSector.TeraCopy"
+        },
+        {
+          "PackageIdentifier": "FinalWire.AIDA64.Extreme"
+        },
+        {
+          "PackageIdentifier": "Wagnardsoft.DisplayDriverUninstaller"
+        },
+        {
+          "PackageIdentifier": "Valve.Steam"
+        },
+        {
+          "PackageIdentifier": "EpicGames.EpicGamesLauncher"
+        },
+        {
+          "PackageIdentifier": "Discord.Discord"
+        },
+        {
+          "PackageIdentifier": "MedalB.V.Medal"
+        },
+        {
+          "PackageIdentifier": "Spotify.Spotify"
+        },
+        {
+          "PackageIdentifier": "WhirlwindFX.SignalRgb"
+        },
+        {
+          "PackageIdentifier": "Microsoft.PowerToys"
+        },
+        {
+          "PackageIdentifier": "Proton.ProtonDrive"
+        },
+        {
+          "PackageIdentifier": "Microsoft.WindowsTerminal"
+        },
+        {
+          "PackageIdentifier": "Debian.Debian"
+        },
+        {
+          "PackageIdentifier": "Chocolatey.Chocolatey"
+        }
+      ],
+      "SourceDetails": {
+        "Argument": "https://cdn.winget.microsoft.com/cache",
+        "Identifier": "Microsoft.Winget.Source_8wekyb3d8bbwe",
+        "Name": "winget",
+        "Type": "Microsoft.PreIndexed.Package"
+      }
+    }
+  ],
+  "WinGetVersion": "1.11.510"
+}
