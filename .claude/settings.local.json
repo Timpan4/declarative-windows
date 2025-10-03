@@ -1,8 +1,11 @@
 {
-  "outputStyle": "Explanatory",
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//tmp/**)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }

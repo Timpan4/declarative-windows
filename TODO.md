@@ -24,9 +24,9 @@
 
 ### Implementation Tasks
 
-- [ ] 🔴 🛠️ Export current apps to `apps.json` from personal machine
+- [x] 🔴 🛠️ Export current apps to `apps.json` from personal machine
 - [ ] 🟡 🛠️ Document manually-installed apps that need to be added to apps.json
-- [ ] 🟡 🛠️ Create apps.json template with common apps for friends to customize
+- [x] 🟡 🛠️ Create apps.json template with common apps for friends to customize
 - [ ] 🟢 🛠️ Add WinGet update logic to bootstrap script
 
 ---
@@ -38,8 +38,10 @@
 ### Implementation Tasks
 
 - [ ] 🔴 🛠️ Download Sophia Script and add to repository
-- [ ] 🔴 🛠️ Create customized `Sophia.ps1` preset file
-- [ ] 🟡 🛠️ Document which Sophia options are enabled/disabled
+- [x] 🔴 🛠️ Create customized `Sophia.ps1` preset file
+- [x] 🟡 🛠️ Document which Sophia options are enabled/disabled
+- [x] 🟡 🛠️ Analyze overlap between AutoUnattend.xml and Sophia Script
+- [x] 🟡 🛠️ Resolve taskbar search conflict (changed to -SearchIcon)
 - [ ] 🟡 🛠️ Create fallback registry.json for tweaks not covered by Sophia
 - [ ] 🟢 🛠️ Add error handling for Sophia Script execution in bootstrap
 
@@ -51,11 +53,10 @@
 
 ### Implementation Tasks
 
-- [ ] 🔴 🛠️ Create/obtain base autounattend.xml file
-- [ ] 🔴 🛠️ Add FirstLogonCommands to execute bootstrap.ps1
-- [ ] 🟡 🛠️ Configure execution policy bypass in FirstLogonCommands
+- [x] 🔴 🛠️ Create/obtain base autounattend.xml file
+- [x] 🔴 🛠️ Add FirstLogonCommands to execute bootstrap.ps1
+- [x] 🟡 🛠️ Configure execution policy bypass in FirstLogonCommands
 - [ ] 🟡 🛠️ Add network wait logic before running bootstrap
-- [ ] 🟢 🛠️ Add timezone, keyboard, and locale settings to autounattend.xml
 
 ---
 
@@ -75,6 +76,25 @@
 - [ ] 🟡 🛠️ Add "continue where left off" logic for failed runs
 - [ ] 🟢 🛠️ Add optional restart prompt at end of bootstrap
 - [ ] 🟢 🛠️ Add dry-run mode (preview without making changes)
+
+---
+
+## Component: Driver Installation Helper
+
+### Implementation Tasks
+
+- [ ] 🟡 🛠️ Create `install-basic-drivers.ps1` standalone script
+- [ ] 🟡 🛠️ Add CPU manufacturer detection (AMD/Intel via Get-CimInstance Win32_Processor)
+- [ ] 🟡 🛠️ Add GPU manufacturer detection (NVIDIA/AMD/Intel via Get-CimInstance Win32_VideoController)
+- [ ] 🟡 🛠️ Display detected hardware and recommended drivers
+- [ ] 🟡 🛠️ Add user prompt: "Install drivers automatically? (Y/N)"
+- [ ] 🟡 🛠️ Install drivers via Chocolatey packages (nvidia-display-driver, amd-ryzen-chipset, intel-graphics-driver)
+- [ ] 🟡 🛠️ Add error handling if Chocolatey not available (with instructions to install via WinGet)
+- [ ] 🟡 🛠️ If automated install fails, display manufacturer download links as fallback
+- [ ] 🟡 🛠️ Copy script to C:\Setup during ISO generation
+- [ ] 🟡 🛠️ Create desktop shortcut "Install Basic Drivers.lnk" pointing to script
+- [ ] 🟢 🛠️ Handle edge cases (multiple GPUs, iGPU + dGPU combos)
+- [ ] 🟢 🛠️ Add logging to C:\Setup\driver-install.log
 
 ---
 
@@ -151,7 +171,7 @@
 - [x] 🔴 📝 Add Known Limitations section to README
 - [x] 🔴 📝 Add Security Warning section to README
 - [ ] 🔴 📝 Document how to use build-iso.ps1 (prerequisites, usage, outputs)
-- [ ] 🟡 📝 Document how to customize Sophia.ps1 preset
+- [x] 🟡 📝 Document how to customize Sophia.ps1 preset
 - [ ] 🟡 📝 Create docs/ISO-GENERATION.md with detailed ISO creation guide
 - [ ] 🟡 📝 Document $OEM$ folder structure
 - [ ] 🟡 📝 Document bootstrap.ps1 log format and location
