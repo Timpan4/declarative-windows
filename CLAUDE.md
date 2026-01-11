@@ -2,17 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## ⚠️ Current Project Phase: PLANNING
+## ⚠️ Current Project Phase: IMPLEMENTATION
 
-This project is currently in the **planning and documentation phase**.
+This project is currently in the **implementation phase**.
 
-**DO NOT create any PowerShell scripts (.ps1 files) yet.** Only work on:
+We are building the core automation scripts:
 
-- Documentation files (README.md, TODO.md, RESEARCH.md, etc.)
-- Planning and design documents
-- Configuration file schemas and examples
+- **bootstrap.ps1** - Main orchestration script
+- **build-iso.ps1** - ISO generation automation
+- Supporting scripts and utilities
 
-Script implementation will begin after the planning phase is complete.
+Configuration files and documentation are already in place.
 
 ---
 

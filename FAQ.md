@@ -6,7 +6,7 @@ Declarative Windows configuration management - like NixOS, but for Windows. The 
 
 ## What's the current status?
 
-Planning phase. No scripts exist yet. See [TODO.md](TODO.md) for implementation tasks.
+Implementation phase. MVP scripts exist (`bootstrap.ps1`, `build-iso.ps1`). See [TODO.md](TODO.md) for remaining tasks.
 
 ## What will this do when it's finished?
 

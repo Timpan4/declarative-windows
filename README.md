@@ -6,11 +6,11 @@
 
 ---
 
-## ⚠️ Project Status: Planning Phase
+## ⚠️ Project Status: Implementation Phase
 
-**No scripts exist yet.** This is currently planning and documentation.
+**MVP scripts exist** (`bootstrap.ps1`, `build-iso.ps1`) and are in active development.
 
-See [TODO.md](TODO.md) for implementation tasks.
+See [TODO.md](TODO.md) for remaining implementation tasks.
 
 ---
 
@@ -23,7 +23,7 @@ Fully automated Windows setup through:
 - **AutoUnattend.xml** - Automated Windows installation
 - **Custom ISO** - One-command ISO generation
 
-### Planned Workflow
+### MVP Workflow
 
 ```powershell
 # 1. Generate custom Windows ISO (one command)
