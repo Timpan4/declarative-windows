@@ -24,6 +24,8 @@ $SetupPath = "C:\Setup"
 $LogFile = Join-Path $SetupPath "install.log"
 $AppsJson = Join-Path $SetupPath "apps.json"
 $SophiaPreset = Join-Path $SetupPath "Sophia-Preset.ps1"
+$SophiaMarker = Join-Path $SetupPath "sophia.completed"
+$WingetMarker = Join-Path $SetupPath "winget.completed"
 $SummaryItems = [System.Collections.Generic.List[object]]::new()
 
 # Initialize logging
@@ -235,6 +237,13 @@ try {
                     Add-SummaryItem -Step "WinGet" -Status "⚠" -Message "No packages found in apps.json"
                 }
                 else {
+                    $appsHash = (Get-FileHash -Path $AppsJson -Algorithm SHA256).Hash
+                    $markerHash = $null
+
+                    if (Test-Path $WingetMarker) {
+                        $markerHash = (Get-Content -Path $WingetMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+                    }
+
                     $missingPackages = @()
 
                     foreach ($packageId in $packageIds) {
@@ -245,9 +254,20 @@ try {
 
                     if ($missingPackages.Count -eq 0) {
                         Write-Log "All WinGet packages already installed" -Level SUCCESS
-                        Add-SummaryItem -Step "WinGet" -Status "✓" -Message "All packages already installed"
+                        Set-Content -Path $WingetMarker -Value $appsHash -Force
+
+                        if ($markerHash -and $markerHash -eq $appsHash) {
+                            Add-SummaryItem -Step "WinGet" -Status "✓" -Message "Already up to date ($WingetMarker)"
+                        }
+                        else {
+                            Add-SummaryItem -Step "WinGet" -Status "✓" -Message "All packages already installed ($WingetMarker)"
+                        }
                     }
                     else {
+                        if ($markerHash -and $markerHash -ne $appsHash) {
+                            Write-Log "apps.json changed since last WinGet run" -Level INFO
+                        }
+
                         $tempAppsJson = Join-Path $env:TEMP "apps-missing-$(Get-Random).json"
                         Write-FilteredAppsJson -AppsData $appsData -PackageIds $missingPackages -OutputPath $tempAppsJson
 
@@ -258,7 +278,8 @@ try {
 
                         if ($LASTEXITCODE -eq 0) {
                             Write-Log "WinGet import completed successfully" -Level SUCCESS
-                            Add-SummaryItem -Step "WinGet" -Status "✓" -Message "Installed $($missingPackages.Count) packages"
+                            Set-Content -Path $WingetMarker -Value $appsHash -Force
+                            Add-SummaryItem -Step "WinGet" -Status "✓" -Message "Installed $($missingPackages.Count) packages ($WingetMarker)"
                         }
                         else {
                             Write-Log "WinGet import completed with warnings (exit code: $LASTEXITCODE)" -Level WARNING
@@ -287,23 +308,43 @@ try {
     Write-Log "Step 2: Executing Sophia Script preset" -Level INFO
 
     if (Test-Path $SophiaPreset) {
-        try {
-            Write-Log "Found Sophia preset at $SophiaPreset" -Level INFO
-            Write-Log "Executing Sophia Script..." -Level INFO
+        $presetHash = (Get-FileHash -Path $SophiaPreset -Algorithm SHA256).Hash
+        $markerHash = $null
 
-            & $SophiaPreset
-
-            if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
-                Write-Log "Sophia Script execution completed" -Level SUCCESS
-                Add-SummaryItem -Step "Sophia" -Status "✓" -Message "Sophia preset applied"
-            } else {
-                Write-Log "Sophia Script completed with exit code: $LASTEXITCODE" -Level WARNING
-                Add-SummaryItem -Step "Sophia" -Status "⚠" -Message "Sophia completed with warnings"
-            }
+        if (Test-Path $SophiaMarker) {
+            $markerHash = (Get-Content -Path $SophiaMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
         }
-        catch {
-            Write-Log "ERROR during Sophia Script execution: $($_.Exception.Message)" -Level ERROR
-            Add-SummaryItem -Step "Sophia" -Status "✗" -Message "Sophia execution failed"
+
+        if ($markerHash -and $markerHash -eq $presetHash) {
+            Write-Log "Sophia Script already applied; skipping" -Level INFO
+            Add-SummaryItem -Step "Sophia" -Status "✓" -Message "Already applied ($SophiaMarker)"
+        }
+        else {
+            if ($markerHash) {
+                Write-Log "Sophia preset changed since last run; reapplying" -Level INFO
+            }
+
+            try {
+                Write-Log "Found Sophia preset at $SophiaPreset" -Level INFO
+                Write-Log "Executing Sophia Script..." -Level INFO
+
+                $global:LASTEXITCODE = $null
+                & $SophiaPreset
+                $exitCode = $global:LASTEXITCODE
+
+                if ($? -and ($null -eq $exitCode -or $exitCode -eq 0)) {
+                    Write-Log "Sophia Script execution completed" -Level SUCCESS
+                    Set-Content -Path $SophiaMarker -Value $presetHash -Force
+                    Add-SummaryItem -Step "Sophia" -Status "✓" -Message "Sophia preset applied ($SophiaMarker)"
+                } else {
+                    Write-Log "Sophia Script completed with exit code: $exitCode" -Level WARNING
+                    Add-SummaryItem -Step "Sophia" -Status "⚠" -Message "Sophia completed with warnings"
+                }
+            }
+            catch {
+                Write-Log "ERROR during Sophia Script execution: $($_.Exception.Message)" -Level ERROR
+                Add-SummaryItem -Step "Sophia" -Status "✗" -Message "Sophia execution failed"
+            }
         }
     }
     else {

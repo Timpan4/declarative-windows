@@ -43,7 +43,7 @@
 - [x] 🟡 🛠️ Analyze overlap between AutoUnattend.xml and Sophia Script
 - [x] 🟡 🛠️ Resolve taskbar search conflict (changed to -SearchIcon)
 - [ ] 🟡 🛠️ Create fallback registry.json for tweaks not covered by Sophia
-- [ ] 🟢 🛠️ Add error handling for Sophia Script execution in bootstrap
+- [x] 🟢 🛠️ Add error handling for Sophia Script execution in bootstrap
 
 ---
 
@@ -64,15 +64,15 @@
 
 ### Implementation Tasks
 
-- [ ] 🔴 🛠️ Create `bootstrap.ps1` main orchestration script
-- [ ] 🔴 🛠️ Add administrator privilege check to bootstrap.ps1
-- [ ] 🔴 🛠️ Implement **idempotent** WinGet import logic (check if installed first)
-- [ ] 🔴 🛠️ Implement **idempotent** Sophia Script execution
-- [ ] 🔴 🛠️ Add desktop summary log creation (visual status with emojis)
-- [ ] 🔴 🛠️ Add desktop shortcut creation for manual re-runs
-- [ ] 🟡 🛠️ Add network connectivity check and wait loop
-- [ ] 🟡 🛠️ Add detailed logging to C:\Setup\install.log
-- [ ] 🟡 🛠️ Add progress indicators (Write-Host with colors)
+- [x] 🔴 🛠️ Create `bootstrap.ps1` main orchestration script
+- [x] 🔴 🛠️ Add administrator privilege check to bootstrap.ps1
+- [x] 🔴 🛠️ Implement **idempotent** WinGet import logic (check if installed first)
+- [x] 🔴 🛠️ Implement **idempotent** Sophia Script execution
+- [x] 🔴 🛠️ Add desktop summary log creation (visual status with emojis)
+- [x] 🔴 🛠️ Add desktop shortcut creation for manual re-runs
+- [x] 🟡 🛠️ Add network connectivity check and wait loop
+- [x] 🟡 🛠️ Add detailed logging to C:\Setup\install.log
+- [x] 🟡 🛠️ Add progress indicators (Write-Host with colors)
 - [ ] 🟡 🛠️ Add "continue where left off" logic for failed runs
 - [ ] 🟢 🛠️ Add optional restart prompt at end of bootstrap
 - [ ] 🟢 🛠️ Add dry-run mode (preview without making changes)
@@ -116,16 +116,16 @@
 
 ### Implementation Tasks
 
-- [ ] 🔴 🛠️ Create `build-iso.ps1` script for automated ISO generation
+- [x] 🔴 🛠️ Create `build-iso.ps1` script for automated ISO generation
 - [ ] 🔴 🛠️ Add oscdimg.exe downloader (from Windows ADK)
-- [ ] 🔴 🛠️ Implement ISO extraction logic
-- [ ] 🔴 🛠️ Implement $OEM$ folder structure creation
-- [ ] 🔴 🛠️ Implement file injection (autounattend.xml, bootstrap.ps1, apps.json, Sophia.ps1)
-- [ ] 🟡 🛠️ Implement ISO rebuild with oscdimg (BIOS + UEFI boot support)
+- [x] 🔴 🛠️ Implement ISO extraction logic
+- [x] 🔴 🛠️ Implement $OEM$ folder structure creation
+- [x] 🔴 🛠️ Implement file injection (autounattend.xml, bootstrap.ps1, apps.json, Sophia.ps1)
+- [x] 🟡 🛠️ Implement ISO rebuild with oscdimg (BIOS + UEFI boot support)
 - [ ] 🟡 🛠️ Add source ISO validation (checksum verification)
-- [ ] 🟡 🛠️ Add progress indicators for ISO creation steps
+- [x] 🟡 🛠️ Add progress indicators for ISO creation steps
 - [ ] 🟢 🛠️ Add option to customize ISO label/name
-- [ ] 🟢 🛠️ Add cleanup of temporary extraction folders
+- [x] 🟢 🛠️ Add cleanup of temporary extraction folders
 
 ### Testing Tasks
 
@@ -143,6 +143,7 @@
 
 - [ ] 🔴 ✅ Test bootstrap.ps1 **idempotency** (run multiple times safely)
 - [ ] 🔴 ✅ Test bootstrap.ps1 on current system (non-destructive mode)
+- [ ] 🟡 ✅ Add Pester smoke tests for scripts
 - [ ] 🔴 ✅ Create Windows VM for testing full fresh install workflow
 - [ ] 🔴 ✅ Test automatic execution via FirstLogonCommands
 - [ ] 🔴 ✅ Test manual execution via desktop shortcut
@@ -297,7 +298,7 @@
 1. [ ] Export apps.json from current system
 2. [ ] Customize Sophia.ps1 preset
 3. [ ] Test bootstrap.ps1 locally
-4. [ ] Create autounattend.xml with FirstLogonCommands
+4. [x] Create autounattend.xml with FirstLogonCommands
 5. [ ] Setup USB with $OEM$ folder structure
 6. [ ] Test fresh install in VM
 7. [ ] Document and share with friends
