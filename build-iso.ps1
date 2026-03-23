@@ -39,6 +39,15 @@ param(
     [string]$OutputISO,
 
     [Parameter(Mandatory = $false)]
+    [string]$SourceIsoHash,
+
+    [Parameter(Mandatory = $false)]
+    [string]$IsoLabel = "DECLARATIVE_WIN11",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OscdimgDownloadUrl,
+
+    [Parameter(Mandatory = $false)]
     [switch]$KeepTemp
 )
 
@@ -46,7 +55,6 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptRoot = $PSScriptRoot
 $TempDir = Join-Path $env:TEMP "declarative-windows-iso-$(Get-Random)"
-$MountDir = Join-Path $TempDir "mount"
 $WorkDir = Join-Path $TempDir "work"
 
 # Color output functions
@@ -70,8 +78,32 @@ function Write-Info {
     Write-Host "  $Message" -ForegroundColor Gray
 }
 
+function Validate-SourceIsoHash {
+    param(
+        [Parameter(Mandatory)]
+        [string]$IsoPath,
+
+        [string]$ExpectedHash
+    )
+
+    if (-not $ExpectedHash) {
+        Write-Info "Source ISO hash not provided; skipping validation"
+        return
+    }
+
+    $actualHash = (Get-FileHash -Path $IsoPath -Algorithm SHA256).Hash
+
+    if ($actualHash -ne $ExpectedHash) {
+        throw "Source ISO checksum mismatch. Expected $ExpectedHash but got $actualHash."
+    }
+
+    Write-Success "Source ISO checksum verified"
+}
+
 # Function to find oscdimg.exe from Windows ADK
 function Find-OscdImg {
+    param([string]$DownloadUrl)
+
     Write-Step "Locating oscdimg.exe from Windows ADK"
 
     $possiblePaths = @(
@@ -98,12 +130,48 @@ function Find-OscdImg {
         }
     }
     catch {
-        # Continue to error below
+        # Continue to download option
+    }
+
+    if ($DownloadUrl) {
+        Write-Step "Downloading oscdimg.exe"
+
+        $cacheDir = Join-Path $env:TEMP "declarative-windows-tools"
+        if (-not (Test-Path $cacheDir)) {
+            New-Item -Path $cacheDir -ItemType Directory -Force | Out-Null
+        }
+
+        $extension = [System.IO.Path]::GetExtension($DownloadUrl)
+        $downloadPath = $null
+
+        if ($extension -eq ".zip") {
+            $downloadPath = Join-Path $cacheDir "oscdimg.zip"
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath
+            Expand-Archive -Path $downloadPath -DestinationPath $cacheDir -Force
+
+            $oscdimgFile = Get-ChildItem -Path $cacheDir -Filter "oscdimg.exe" -Recurse | Select-Object -First 1
+            if ($oscdimgFile) {
+                Write-Success "Downloaded oscdimg.exe to: $($oscdimgFile.FullName)"
+                return $oscdimgFile.FullName
+            }
+        }
+        else {
+            $downloadPath = Join-Path $cacheDir "oscdimg.exe"
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath
+            if (Test-Path $downloadPath) {
+                Write-Success "Downloaded oscdimg.exe to: $downloadPath"
+                return $downloadPath
+            }
+        }
+
+        Write-ErrorMessage "oscdimg.exe download failed"
+        throw "Failed to download oscdimg.exe from $DownloadUrl"
     }
 
     Write-ErrorMessage "oscdimg.exe not found!"
     Write-Host "`nPlease install Windows ADK from:" -ForegroundColor Yellow
     Write-Host "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -ForegroundColor Yellow
+    Write-Host "`nOr provide a direct download URL with -OscdimgDownloadUrl" -ForegroundColor Yellow
     throw "Windows ADK is required to build ISO files."
 }
 
@@ -128,6 +196,10 @@ try {
         "bootstrap.ps1" = Join-Path $ScriptRoot "bootstrap.ps1"
         "apps.json" = Join-Path $ScriptRoot "apps.json"
         "Sophia-Preset.ps1" = Join-Path $ScriptRoot "Sophia-Preset.ps1"
+        "restore-backup.ps1" = Join-Path $ScriptRoot "restore-backup.ps1"
+        "apply-registry.ps1" = Join-Path $ScriptRoot "apply-registry.ps1"
+        "registry.json" = Join-Path $ScriptRoot "config\registry.json"
+        "backup.template.json" = Join-Path $ScriptRoot "config\backup.template.json"
     }
 
     foreach ($file in $requiredFiles.GetEnumerator()) {
@@ -140,8 +212,11 @@ try {
         }
     }
 
+    # Validate source ISO checksum if provided
+    Validate-SourceIsoHash -IsoPath $SourceISO -ExpectedHash $SourceIsoHash
+
     # Find oscdimg.exe
-    $oscdimgPath = Find-OscdImg
+    $oscdimgPath = Find-OscdImg -DownloadUrl $OscdimgDownloadUrl
 
     # Create temporary directories
     Write-Step "Creating temporary directories"
@@ -190,7 +265,9 @@ try {
     $filesToCopy = @(
         @{ Name = "bootstrap.ps1"; Path = $requiredFiles["bootstrap.ps1"] },
         @{ Name = "apps.json"; Path = $requiredFiles["apps.json"] },
-        @{ Name = "Sophia-Preset.ps1"; Path = $requiredFiles["Sophia-Preset.ps1"] }
+        @{ Name = "Sophia-Preset.ps1"; Path = $requiredFiles["Sophia-Preset.ps1"] },
+        @{ Name = "restore-backup.ps1"; Path = $requiredFiles["restore-backup.ps1"] },
+        @{ Name = "apply-registry.ps1"; Path = $requiredFiles["apply-registry.ps1"] }
     )
 
     foreach ($file in $filesToCopy) {
@@ -198,25 +275,12 @@ try {
         Write-Success "$($file.Name) copied"
     }
 
-    # Create desktop shortcut script
-    Write-Step "Creating desktop shortcut script"
-    $shortcutScript = @'
-# Create desktop shortcut for re-running bootstrap
-$WshShell = New-Object -ComObject WScript.Shell
-$desktopPath = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktopPath "Run Windows Setup.lnk"
-$shortcut = $WshShell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = "powershell.exe"
-$shortcut.Arguments = "-ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1"
-$shortcut.WorkingDirectory = "C:\Setup"
-$shortcut.WindowStyle = 1
-$shortcut.Description = "Re-run declarative Windows setup"
-$shortcut.Save()
-'@
-
-    $shortcutScriptPath = Join-Path $setupPath "create-shortcut.ps1"
-    Set-Content -Path $shortcutScriptPath -Value $shortcutScript -Force
-    Write-Success "Desktop shortcut script created"
+    # Copy config files
+    Write-Step "Copying config files"
+    $configSource = Join-Path $ScriptRoot "config"
+    $configDestination = Join-Path $setupPath "config"
+    Copy-Item -Path $configSource -Destination $configDestination -Recurse -Force
+    Write-Success "config folder copied"
 
     # Build the ISO
     Write-Step "Building custom ISO with oscdimg"
@@ -248,6 +312,7 @@ $shortcut.Save()
         "-o",                           # Optimize storage
         "-u2",                          # UDF file system
         "-udfver102",                   # UDF version 1.02
+        "-l$IsoLabel",                  # ISO label
         "-bootdata:2#p0,e,b`"$bootImage`"#pEF,e,b`"$efiBootImage`"",  # Dual boot (BIOS + UEFI)
         "`"$WorkDir`"",                 # Source directory
         "`"$outputPath`""               # Output ISO

@@ -26,13 +26,32 @@ Fully automated Windows setup through:
 ### MVP Workflow
 
 ```powershell
+# 0. Back up files and personal repo config to another drive
+.\preflight-backup.ps1 -DestinationRoot "E:\"
+
 # 1. Generate custom Windows ISO (one command)
 .\build-iso.ps1 -SourceISO "Win11.iso" -OutputISO "Win11_Custom.iso"
 
 # 2. Boot from ISO - everything installs automatically
 
-# 3. (Optional) Re-run setup anytime from desktop shortcut
+# 3. Restore files later from the desktop shortcut
 ```
+
+The repo is restored after install by cloning the original remote into `%USERPROFILE%\Documents\declarative-windows`. If cloning fails, setup continues from `C:\Setup` and the summary tells you to retry the clone later.
+
+---
+
+## Pre-installed Windows Optimization (Planned)
+
+This project will also support running on an existing Windows 11 install (no ISO needed). The planned “local mode” will:
+
+- Apply app installs via WinGet
+- Run Sophia Script tweaks (auto-download Sophia if missing)
+- Perform bloat removal on the existing system
+- Create a system restore point before changes
+- Work from the repo directory (no `C:\Setup` required)
+
+See `TODO.md` for implementation tasks.
 
 ---
 
@@ -49,6 +68,23 @@ winget export -o apps.json --source winget
 ```
 
 **Note:** Only captures apps installed via WinGet.
+
+For personal usage, keep `apps.json` out of git. The repo ships `apps-template.json`, and the backup workflow preserves your personal `apps.json` so it can be restored into the cloned repo after reinstall.
+
+### Backup Before Reinstall
+
+Create a personal backup config by copying `config\backup.template.json` to `config\backup.json`, then enable the known folders and extra paths you want to preserve.
+
+```powershell
+.\preflight-backup.ps1 -DestinationRoot "E:\"
+```
+
+This backs up:
+
+- Standard folders such as Desktop, Documents, and Pictures
+- Extra declarative paths from `config\backup.json`
+- Personal repo files like `apps.json` and `config\backup.json`
+- A backup manifest containing the original repo remote URL
 
 ### 2. Edit Your App List
 
@@ -134,10 +170,11 @@ declarative-windows/
 ├── apps.json              # Your WinGet package list (create this)
 ├── Sophia-Preset.ps1      # Custom Sophia Script configuration
 ├── autounattend.xml       # Windows unattended install config
-├── bootstrap.ps1          # Main orchestration script (planned)
-├── build-iso.ps1          # ISO generation script (planned)
+├── bootstrap.ps1          # Main orchestration script
+├── build-iso.ps1          # ISO generation script
+├── apply-registry.ps1     # Registry fallback apply script
 │
-└── config/                # Optional configs (planned)
+└── config/                # Optional configs
     ├── registry.json
     ├── features.json
     └── settings.json
@@ -163,6 +200,8 @@ See [SECURITY.md](SECURITY.md) for what to avoid committing to Git.
 
 ## Documentation
 
+- [docs/ISO-GENERATION.md](docs/ISO-GENERATION.md) - ISO creation guide
+- `config/backup.template.json` - Shared backup template
 - [FAQ.md](FAQ.md) - Frequently asked questions
 - [SECURITY.md](SECURITY.md) - Security best practices
 - [TODO.md](TODO.md) - Implementation tasks

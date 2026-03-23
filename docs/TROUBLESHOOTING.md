@@ -217,14 +217,15 @@ cannot be loaded because running scripts is disabled on this system
 
 2. **Verify $OEM$ folder structure:**
 
-   ```
-   USB:\
-   ├── autounattend.xml          ← Root!
-   └── $OEM$\$$\Setup\
-       ├── bootstrap.ps1
-       ├── apps.json
-       └── Sophia.ps1
-   ```
+    ```
+    USB:\
+    ├── autounattend.xml          ← Root!
+    └── $OEM$\$1\Setup\
+        ├── bootstrap.ps1
+        ├── apps.json
+        ├── restore-backup.ps1
+        └── Sophia.ps1
+    ```
 
 3. **Check autounattend.xml syntax:**
    - Use an XML validator

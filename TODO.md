@@ -75,7 +75,17 @@
 - [x] 🟡 🛠️ Add progress indicators (Write-Host with colors)
 - [ ] 🟡 🛠️ Add "continue where left off" logic for failed runs
 - [ ] 🟢 🛠️ Add optional restart prompt at end of bootstrap
-- [ ] 🟢 🛠️ Add dry-run mode (preview without making changes)
+- [x] 🟢 🛠️ Add dry-run mode (preview without making changes)
+
+### Pre-installed Windows (Local Mode)
+
+- [ ] 🔴 🛠️ Add local mode flag (run from repo dir, not C:\Setup)
+- [ ] 🔴 🛠️ Add system restore point creation before changes
+- [ ] 🔴 🛠️ Add bloat removal path for existing installs (Appx + features)
+- [ ] 🔴 🛠️ Auto-download Sophia Script when missing (version-pinned)
+- [ ] 🟡 🛠️ Add safety prompt for destructive steps (with -Force override)
+- [ ] 🟡 🛠️ Add local-mode logging path (same format as C:\Setup)
+- [ ] 🟢 🛠️ Add local-mode desktop shortcut/summary (optional)
 
 ---
 
@@ -126,6 +136,8 @@
 - [x] 🟡 🛠️ Add progress indicators for ISO creation steps
 - [ ] 🟢 🛠️ Add option to customize ISO label/name
 - [x] 🟢 🛠️ Add cleanup of temporary extraction folders
+- [x] 🟢 🛠️ Validate boot images before ISO build
+- [x] 🟢 ✅ Run Pester in GitHub Actions
 
 ### Testing Tasks
 
@@ -143,7 +155,7 @@
 
 - [ ] 🔴 ✅ Test bootstrap.ps1 **idempotency** (run multiple times safely)
 - [ ] 🔴 ✅ Test bootstrap.ps1 on current system (non-destructive mode)
-- [ ] 🟡 ✅ Add Pester smoke tests for scripts
+- [x] 🟡 ✅ Add Pester smoke tests for scripts
 - [ ] 🔴 ✅ Create Windows VM for testing full fresh install workflow
 - [ ] 🔴 ✅ Test automatic execution via FirstLogonCommands
 - [ ] 🔴 ✅ Test manual execution via desktop shortcut

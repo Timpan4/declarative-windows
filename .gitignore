@@ -2,6 +2,14 @@
 # These files may contain passwords, personal data, or secrets
 *-personal.json                  # Personal configuration files
 config-personal/                 # Personal config directory
+config/backup.json               # Personal backup configuration
+config/restore.json              # Personal restore configuration
+manifests/                       # Backup manifests and reports
+backups/                         # Local backup artifacts
+*.manifest.json                  # Backup manifest files
+*.restore-report.json            # Restore report files
+*.backup-report.txt              # Human-readable backup reports
+*.machine.json                   # Machine-specific exports
 
 # Note: autounattend.xml IS committed (passwords left blank, Windows prompts during install)
 
