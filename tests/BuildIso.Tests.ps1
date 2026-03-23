@@ -17,4 +17,18 @@ Describe "build-iso.ps1 static checks" {
     It "unmounts ISO in cleanup" {
         $scriptContent | Should -Match "Dismount-DiskImage"
     }
+
+    It "supports ISO labels" {
+        $scriptContent | Should -Match '-l\$IsoLabel'
+    }
+
+    It "copies registry fallback assets" {
+        $scriptContent | Should -Match "apply-registry\.ps1"
+        $scriptContent | Should -Match "config\\registry\.json"
+    }
+
+    It "copies restore workflow assets" {
+        $scriptContent | Should -Match "restore-backup\.ps1"
+        $scriptContent | Should -Match "backup\.template\.json"
+    }
 }

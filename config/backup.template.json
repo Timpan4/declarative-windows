@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "knownFolders": [
+    {
+      "name": "Desktop",
+      "enabled": true,
+      "required": false,
+      "tags": [
+        "profile",
+        "desktop"
+      ]
+    },
+    {
+      "name": "Documents",
+      "enabled": true,
+      "required": false,
+      "tags": [
+        "profile",
+        "documents"
+      ]
+    },
+    {
+      "name": "Pictures",
+      "enabled": true,
+      "required": false,
+      "tags": [
+        "profile",
+        "pictures"
+      ]
+    },
+    {
+      "name": "Downloads",
+      "enabled": false,
+      "required": false,
+      "tags": [
+        "profile",
+        "downloads"
+      ]
+    },
+    {
+      "name": "Videos",
+      "enabled": false,
+      "required": false,
+      "tags": [
+        "profile",
+        "videos"
+      ]
+    },
+    {
+      "name": "Music",
+      "enabled": false,
+      "required": false,
+      "tags": [
+        "profile",
+        "music"
+      ]
+    }
+  ],
+  "extraPaths": [
+    {
+      "path": "%USERPROFILE%\\Source",
+      "enabled": false,
+      "required": false,
+      "tags": [
+        "dev"
+      ]
+    },
+    {
+      "path": "D:\\Projects",
+      "enabled": false,
+      "required": false,
+      "tags": [
+        "dev"
+      ]
+    }
+  ],
+  "excludePatterns": [
+    "**\\node_modules\\**",
+    "**\\.git\\**",
+    "**\\.venv\\**",
+    "**\\.cache\\**",
+    "**\\Temp\\**"
+  ],
+  "options": {
+    "backupRepoFiles": true,
+    "copyDownloads": false
+  },
+  "restoreTargets": {
+    "repoPath": "%USERPROFILE%\\Documents\\declarative-windows"
+  }
+}

@@ -155,6 +155,11 @@
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>2</Order>
+                    <Description>Wait for Network Connectivity</Description>
+                    <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$timeout=300; $interval=5; $start=Get-Date; $connected=$false; while((Get-Date) -lt $start.AddSeconds($timeout)) { if (Test-Connection -ComputerName 1.1.1.1 -Count 1 -Quiet) { $connected=$true; break }; Start-Sleep -Seconds $interval }; if (-not $connected) { Write-Host 'Network wait timed out'; exit 1 }"</CommandLine>
+                </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>3</Order>
                     <Description>Run Windows Setup Bootstrap Script</Description>
                     <CommandLine>powershell.exe -ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1</CommandLine>
                 </SynchronousCommand>

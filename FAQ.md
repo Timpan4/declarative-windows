@@ -15,6 +15,8 @@ One command generates a custom Windows ISO. Boot from it, and everything install
 - OS tweaks applied via Sophia Script
 - Automated Windows setup via autounattend.xml
 
+Before reinstall, you can also run a declarative backup workflow that preserves common folders and extra configured paths.
+
 ## What Windows versions are supported?
 
 Windows 11 only (22H2 or later). Windows 10 is not supported.
@@ -34,6 +36,23 @@ winget export -o apps.json
 ```
 
 Then edit the JSON to remove unwanted apps.
+
+## Where does the repo live after reinstall?
+
+The installer tries to clone the original repo remote into `%USERPROFILE%\Documents\declarative-windows`.
+
+If cloning fails, setup continues from `C:\Setup` and you can retry later.
+
+## What files should stay out of git?
+
+Keep personal/system-specific files out of version control:
+
+- `apps.json`
+- `config\backup.json`
+- backup manifests and reports
+- machine-specific exports
+
+Use the committed templates for shared defaults.
 
 ## Is it safe to commit my config to Git?
 

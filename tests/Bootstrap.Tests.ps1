@@ -22,9 +22,54 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "Run Windows Setup\.lnk"
     }
 
+    It "tracks resume state" {
+        $scriptContent | Should -Match "state\.json"
+        $scriptContent | Should -Match "Initialize-State"
+    }
+
+    It "handles registry fallback" {
+        $scriptContent | Should -Match "apply-registry\.ps1"
+        $scriptContent | Should -Match "registry\.json"
+    }
+
     It "checks network with ping and HTTPS fallback" {
         $scriptContent | Should -Match "1\.1\.1\.1"
         $scriptContent | Should -Match "Test-NetConnection"
         $scriptContent | Should -Match "Invoke-WebRequest"
+    }
+
+    It "uses a canonical repo path in Documents" {
+        $scriptContent | Should -Match "MyDocuments"
+        $scriptContent | Should -Match "declarative-windows"
+    }
+
+    It "creates a restore shortcut" {
+        $scriptContent | Should -Match "Restore My Files\.lnk"
+        $scriptContent | Should -Match "restore-backup\.ps1"
+    }
+
+    It "can fall back when repo clone fails" {
+        $scriptContent | Should -Match "git"
+        $scriptContent | Should -Match "continuing with C:\\Setup"
+        $scriptContent | Should -Match "backup-manifest\.json"
+    }
+
+    It "auto-downloads Sophia Script when missing" {
+        $scriptContent | Should -Match "Get-SophiaScript"
+        $scriptContent | Should -Match "SophiaDownloadUrl"
+        $scriptContent | Should -Match "Sophia\.Script\.for\.Windows\.11"
+        $scriptContent | Should -Match "Expand-Archive"
+    }
+
+    It "tracks failed installs and writes a report" {
+        $scriptContent | Should -Match "Add-FailedItem"
+        $scriptContent | Should -Match "Write-FailedInstallsReport"
+        $scriptContent | Should -Match "Failed Installs\.txt"
+        $scriptContent | Should -Match "failed-installs\.log"
+    }
+
+    It "checks individual packages after WinGet import" {
+        $scriptContent | Should -Match "stillMissing"
+        $scriptContent | Should -Match "Not installed after import"
     }
 }
