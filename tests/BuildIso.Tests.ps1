@@ -31,4 +31,8 @@ Describe "build-iso.ps1 static checks" {
         $scriptContent | Should -Match "restore-backup\.ps1"
         $scriptContent | Should -Match "backup\.template\.json"
     }
+
+    It "does not reference MountDir anymore" {
+        $scriptContent.Contains('$MountDir') | Should -BeFalse
+    }
 }

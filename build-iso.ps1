@@ -221,7 +221,6 @@ try {
     # Create temporary directories
     Write-Step "Creating temporary directories"
     New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
-    New-Item -Path $MountDir -ItemType Directory -Force | Out-Null
     New-Item -Path $WorkDir -ItemType Directory -Force | Out-Null
     Write-Success "Temporary directories created at: $TempDir"
 

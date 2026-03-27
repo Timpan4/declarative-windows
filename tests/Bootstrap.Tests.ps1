@@ -72,4 +72,13 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "stillMissing"
         $scriptContent | Should -Match "Not installed after import"
     }
+
+    It "keeps partial WinGet failures retryable" {
+        $scriptContent | Should -Match 'Set-StepState -StepId \$stepId -Status "failed" -Message "\$failCount package\(s\) failed"'
+    }
+
+    It "chooses newest backup manifest across drives" {
+        $scriptContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
+        $scriptContent | Should -Match 'newestMatch'
+    }
 }

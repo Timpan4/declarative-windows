@@ -433,19 +433,18 @@ function Find-BackupManifest {
         $_.Root -ne "$($env:SystemDrive)\"
     }
 
-    foreach ($drive in $drives) {
+    $matches = foreach ($drive in $drives) {
         $candidateRoot = Join-Path $drive.Root "declarative-windows-backup"
         if (-not (Test-Path $candidateRoot)) {
             continue
         }
 
-        $match = Get-ChildItem -Path $candidateRoot -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
+        Get-ChildItem -Path $candidateRoot -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue
+    }
 
-        if ($match) {
-            return $match.FullName
-        }
+    $newestMatch = $matches | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($newestMatch) {
+        return $newestMatch.FullName
     }
 
     return $null
@@ -657,9 +656,8 @@ try {
                         else {
                             $failCount = @($stillMissing).Count
                             Write-Log "WinGet import finished; $failCount package(s) failed" -Level WARNING
-                            Set-Content -Path $WingetMarker -Value $appsHash -Force
                             Add-SummaryItem -Step "WinGet" -Status "WARN" -Message "$failCount package(s) failed - see Failed Installs.txt"
-                            Set-StepState -StepId $stepId -Status "done" -Message "$failCount package(s) failed"
+                            Set-StepState -StepId $stepId -Status "failed" -Message "$failCount package(s) failed"
                         }
                     }
                 }
