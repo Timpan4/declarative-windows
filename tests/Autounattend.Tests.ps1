@@ -8,6 +8,13 @@ Describe "autounattend.xml static checks" {
         $fileContent | Should -Match "C:\\Setup\\bootstrap\.ps1"
     }
 
+    It "does not hardcode a disk or partition target" {
+        $fileContent | Should -Not -Match "<DiskConfiguration>"
+        $fileContent | Should -Not -Match "<WillWipeDisk>true</WillWipeDisk>"
+        $fileContent | Should -Not -Match "<InstallTo>"
+        $fileContent | Should -Not -Match "<DiskID>0</DiskID>"
+    }
+
     It "sets execution policy for bootstrap" {
         $fileContent | Should -Match "Set-ExecutionPolicy"
     }

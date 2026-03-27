@@ -57,7 +57,7 @@ Custom-ISO:\
 
 ## On the Installed System
 
-During installation, the `$OEM$` folder copies files to `C:\Setup`.
+During installation, you still choose the target disk and partition in Windows Setup. After Windows copies the `$OEM$` payload, the setup files land in `C:\Setup`.
 
 ```
 C:\Setup\
@@ -77,6 +77,13 @@ A desktop shortcut is created for manual re-runs:
 - `Restore My Files.lnk`
 
 After first login, bootstrap attempts to clone the original repo remote into `%USERPROFILE%\Documents\declarative-windows`. `C:\Setup` remains the staging area and fallback location if cloning fails.
+
+## Install Flow
+
+1. Boot from the custom ISO.
+2. Choose the destination disk and partition layout manually in Windows Setup.
+3. Complete the normal Windows account setup flow.
+4. Let `bootstrap.ps1` continue the app install and post-install configuration automatically after first login.
 
 ## Logs and Resume State
 

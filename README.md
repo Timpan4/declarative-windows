@@ -32,12 +32,12 @@ Fully automated Windows setup through:
 # 1. Generate custom Windows ISO (one command)
 .\build-iso.ps1 -SourceISO "Win11.iso" -OutputISO "Win11_Custom.iso"
 
-# 2. Boot from ISO - everything installs automatically
+# 2. Boot from ISO - choose the target disk/partition in Windows Setup
 
 # 3. Restore files later from the desktop shortcut
 ```
 
-The repo is restored after install by cloning the original remote into `%USERPROFILE%\Documents\declarative-windows`. If cloning fails, setup continues from `C:\Setup` and the summary tells you to retry the clone later.
+Windows Setup still requires you to choose the install disk and partition layout manually. After first login, the repo is restored by cloning the original remote into `%USERPROFILE%\Documents\declarative-windows`. If cloning fails, setup continues from `C:\Setup` and the summary tells you to retry the clone later.
 
 ---
 
