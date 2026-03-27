@@ -1,6 +1,6 @@
 # AutoUnattend.xml Explained
 
-This file automates Windows 11 installation and applies tweaks during setup. It runs before you even log in for the first time.
+This file automates parts of Windows 11 setup and applies tweaks during installation. It runs before you even log in for the first time.
 
 ## How It Works
 
@@ -11,7 +11,7 @@ The file runs in three phases during Windows installation:
 Runs while Windows is being installed to the disk.
 
 - Bypasses TPM/Secure Boot/RAM checks (helpful for VMs)
-- Sets up disk partitions (EFI + MSR + Windows)
+- Leaves disk and partition selection to the user in Windows Setup
 - Configures language/locale to en-US
 
 ### 2. specialize (Pre-OOBE Phase)

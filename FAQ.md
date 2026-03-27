@@ -10,7 +10,7 @@ Implementation phase. MVP scripts exist (`bootstrap.ps1`, `build-iso.ps1`). See 
 
 ## What will this do when it's finished?
 
-One command generates a custom Windows ISO. Boot from it, and everything installs automatically:
+One command generates a custom Windows ISO. Boot from it, choose the target disk yourself, and post-install setup continues automatically:
 - Apps installed via WinGet
 - OS tweaks applied via Sophia Script
 - Automated Windows setup via autounattend.xml
