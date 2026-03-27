@@ -27,6 +27,7 @@ Describe "backup and restore static checks" {
     It "supports restore manifest autodetection" {
         $restoreScriptContent | Should -Match "Find-BackupManifest"
         $restoreScriptContent | Should -Match "declarative-windows-backup"
+        $restoreScriptContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
     }
 
     It "defines known folders and extra paths in the template" {

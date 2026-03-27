@@ -27,27 +27,21 @@ function Write-Success {
 }
 
 function Find-BackupManifest {
-    $candidates = New-Object System.Collections.Generic.List[string]
     $drives = Get-PSDrive -PSProvider FileSystem | Where-Object {
         $_.Root -ne "$($env:SystemDrive)\"
     }
 
-    foreach ($drive in $drives) {
+    $candidates = foreach ($drive in $drives) {
         $root = $drive.Root
         $container = Join-Path $root "declarative-windows-backup"
         if (-not (Test-Path $container)) {
             continue
         }
 
-        $matches = Get-ChildItem -Path $container -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTimeUtc -Descending
-
-        foreach ($match in $matches) {
-            $candidates.Add($match.FullName)
-        }
+        Get-ChildItem -Path $container -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue
     }
 
-    return $candidates | Select-Object -First 1
+    return ($candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).FullName
 }
 
 function Resolve-RestoreTargetPath {
