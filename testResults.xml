@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="10" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-01-11" time="14:52:09">
+  <environment clr-version="4.0.30319.42000" user-domain="DESKTOP-JOTSPPH" cwd="D:\declarative-windows" platform="Microsoft Windows 11 Pro|C:\WINDOWS|\Device\Harddisk2\Partition3" machine-name="DESKTOP-JOTSPPH" nunit-version="2.5.8.0" os-version="10.0.26200" user="timpa" />
+  <culture-info current-culture="en-US" current-uiculture="en-GB" />
+  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="0.6485" asserts="0" description="Pester">
+    <results>
+      <test-suite type="TestFixture" name="D:\declarative-windows\tests\Autounattend.Tests.ps1" executed="True" result="Success" success="True" time="0.5636" asserts="0" description="D:\declarative-windows\tests\Autounattend.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="autounattend.xml static checks" executed="True" result="Success" success="True" time="0.2046" asserts="0" description="autounattend.xml static checks">
+            <results>
+              <test-case description="runs bootstrap from C:\\Setup" name="autounattend.xml static checks.runs bootstrap from C:\\Setup" time="0.1387" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="sets execution policy for bootstrap" name="autounattend.xml static checks.sets execution policy for bootstrap" time="0.0034" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="D:\declarative-windows\tests\Bootstrap.Tests.ps1" executed="True" result="Success" success="True" time="0.0413" asserts="0" description="D:\declarative-windows\tests\Bootstrap.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="bootstrap.ps1 static checks" executed="True" result="Success" success="True" time="0.0136" asserts="0" description="bootstrap.ps1 static checks">
+            <results>
+              <test-case description="tracks WinGet completion marker with hash" name="bootstrap.ps1 static checks.tracks WinGet completion marker with hash" time="0.0023" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="tracks Sophia completion marker with hash" name="bootstrap.ps1 static checks.tracks Sophia completion marker with hash" time="0.0022" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="creates desktop summary" name="bootstrap.ps1 static checks.creates desktop summary" time="0.0019" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="creates desktop shortcut" name="bootstrap.ps1 static checks.creates desktop shortcut" time="0.0017" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="checks network with ping and HTTPS fallback" name="bootstrap.ps1 static checks.checks network with ping and HTTPS fallback" time="0.0023" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="D:\declarative-windows\tests\BuildIso.Tests.ps1" executed="True" result="Success" success="True" time="0.0436" asserts="0" description="D:\declarative-windows\tests\BuildIso.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="build-iso.ps1 static checks" executed="True" result="Success" success="True" time="0.0143" asserts="0" description="build-iso.ps1 static checks">
+            <results>
+              <test-case description="uses $  Setup path" name="build-iso.ps1 static checks.uses $  Setup path" time="0.0051" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="validates boot images before oscdimg" name="build-iso.ps1 static checks.validates boot images before oscdimg" time="0.0022" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="unmounts ISO in cleanup" name="build-iso.ps1 static checks.unmounts ISO in cleanup" time="0.0023" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>
