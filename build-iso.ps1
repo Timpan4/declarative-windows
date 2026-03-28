@@ -191,6 +191,8 @@ try {
     # Validate required files exist
     Write-Step "Validating project files"
 
+    $validateUnattendScript = Join-Path $ScriptRoot "validate-unattend.ps1"
+
     $requiredFiles = @{
         "autounattend.xml" = Join-Path $ScriptRoot "autounattend.xml"
         "bootstrap.ps1" = Join-Path $ScriptRoot "bootstrap.ps1"
@@ -227,6 +229,11 @@ try {
 
     # Validate source ISO checksum if provided
     Validate-SourceIsoHash -IsoPath $SourceISO -ExpectedHash $SourceIsoHash
+
+    # Validate autounattend.xml before doing any expensive ISO work
+    Write-Step "Validating autounattend.xml"
+    & $validateUnattendScript -UnattendPath $requiredFiles["autounattend.xml"] -SourceISO $SourceISO
+    Write-Success "autounattend.xml validation passed"
 
     # Find oscdimg.exe
     $oscdimgPath = Find-OscdImg -DownloadUrl $OscdimgDownloadUrl

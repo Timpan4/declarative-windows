@@ -1,6 +1,6 @@
 # AutoUnattend.xml Explained
 
-This file automates parts of Windows 11 setup and applies tweaks during installation. It runs before you even log in for the first time.
+This file automates only the minimal parts of Windows 11 setup needed for this repo. It intentionally avoids aggressive install-time customization so Windows Setup stays as reliable as possible.
 
 ## How It Works
 
@@ -14,35 +14,7 @@ Runs while Windows is being installed to the disk.
 - Leaves disk and partition selection to the user in Windows Setup
 - Configures language/locale to en-US
 
-### 2. specialize (Pre-OOBE Phase)
-
-Runs after Windows is installed but before you see the setup screen.
-
-**Bloatware Removal:**
-- Bing Search
-- Office Hub
-- OneNote
-- Skype
-- Solitaire Collection
-- Microsoft Teams
-- Recall feature
-
-**System Tweaks:**
-- Disable Chat auto-install
-- Set password to never expire
-- Set PowerShell execution policy to RemoteSigned
-- Empty Start menu pins
-- Disable sticky keys prompt
-
-**Default User Settings (applies to all accounts):**
-- Show file extensions
-- Show hidden files
-- Left-align taskbar
-- Disable mouse pointer precision
-- Classic right-click context menu
-- Search icon-only mode
-
-### 3. oobeSystem (First Boot)
+### 2. oobeSystem (First Boot)
 
 Runs when Windows boots for the first time.
 
@@ -59,33 +31,22 @@ Runs when Windows boots for the first time.
 
 ## What Happens on First Login
 
-1. Windows applies user-specific tweaks (classic context menu, search icon)
-2. Explorer restarts to apply changes
+1. Windows completes the normal account setup flow
+2. The system waits for network connectivity
 3. **bootstrap.ps1 runs automatically** via FirstLogonCommands
 
-The embedded tweaks handle OS-level stuff during install. Bootstrap handles app installation via WinGet and Sophia Script tweaks.
+Install-time tweaking is intentionally minimal. Bootstrap handles app installation via WinGet and system customization via Sophia Script after first login.
 
 **If bootstrap fails or you want to re-run it:** Just run `C:\Setup\bootstrap.ps1` manually.
 
 ## Customization
 
-All the tweaks are defined in the `<Extensions>` section at the bottom of the XML file. The scripts are embedded directly in the XML.
-
-**To add a tweak:** Edit the relevant script section (Specialize.ps1, DefaultUser.ps1, or UserOnce.ps1)
-
-**To remove a tweak:** Delete or comment out the script block
-
-**To add/remove bloatware:** Edit the `$selectors` array in RemovePackages.ps1
+This file is intentionally minimal. If you add more install-time customization later, keep it small and retest Setup carefully.
 
 ## Logs
 
 If something goes wrong, check these logs:
 
-- `C:\Windows\Setup\Scripts\Specialize.log` - Bloatware removal and system tweaks
-- `C:\Windows\Setup\Scripts\RemovePackages.log` - App removal details
-- `C:\Windows\Setup\Scripts\RemoveFeatures.log` - Feature removal details
-- `C:\Windows\Setup\Scripts\DefaultUser.log` - Default user registry tweaks
-- `%TEMP%\UserOnce.log` - Per-user tweaks log
 - `C:\Windows\Panther\setupact.log` - Windows setup log
 
 ## Security Note
