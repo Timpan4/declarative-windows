@@ -38,6 +38,17 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "registry\.json"
     }
 
+    It "migrates unattended debloat and user tweaks into bootstrap" {
+        $scriptContent | Should -Match "postInstallTweaks"
+        $scriptContent | Should -Match "Remove-AppxProvisionedPackage"
+        $scriptContent | Should -Match "Disable-WindowsOptionalFeature"
+        $scriptContent | Should -Match "ConfigureStartPins"
+        $scriptContent | Should -Match "SearchboxTaskbarMode"
+        $scriptContent | Should -Match "HideFileExt"
+        $scriptContent | Should -Match "TaskbarAl"
+        $scriptContent | Should -Match "InprocServer32"
+    }
+
     It "checks network with ping and HTTPS fallback" {
         $scriptContent | Should -Match "1\.1\.1\.1"
         $scriptContent | Should -Match "Test-NetConnection"

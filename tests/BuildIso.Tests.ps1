@@ -37,6 +37,15 @@ Describe "build-iso.ps1 static checks" {
         $scriptContent | Should -Match "skipping optional apps payload"
     }
 
+    It "validates autounattend before ISO build" {
+        $scriptContent | Should -Match "validate-unattend\.ps1"
+        $scriptContent | Should -Match "autounattend\.xml validation passed"
+    }
+
+    It "passes source ISO into unattend validation" {
+        ($scriptContent -like '*-SourceISO $SourceISO*') | Should -BeTrue
+    }
+
     It "does not reference MountDir anymore" {
         $scriptContent.Contains('$MountDir') | Should -BeFalse
     }

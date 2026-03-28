@@ -38,7 +38,7 @@ $SophiaVersion = "7.1.4"
 $SophiaZipName = "Sophia.Script.for.Windows.11.v$SophiaVersion.zip"
 $SophiaDownloadUrl = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$SophiaVersion/$SophiaZipName"
 $FailedInstallsLog = Join-Path $SetupPath "failed-installs.log"
-$StepIds = @("winget", "repo", "sophia", "registry", "shortcut", "restoreShortcut", "optionalShortcut", "optionalWinget", "summary")
+$StepIds = @("winget", "repo", "sophia", "postInstallTweaks", "registry", "shortcut", "restoreShortcut", "optionalShortcut", "optionalWinget", "summary")
 $SetupState = $null
 $SummaryItems = [System.Collections.Generic.List[object]]::new()
 $FailedItems = [System.Collections.Generic.List[object]]::new()
@@ -575,6 +575,140 @@ function New-DesktopShortcut {
     $shortcut.Save()
 }
 
+function Set-RegistryValueSafe {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [string]$Name,
+
+        [Parameter(Mandatory)]
+        [object]$Value,
+
+        [Parameter(Mandatory)]
+        [string]$Type
+    )
+
+    if (-not (Test-Path $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -Force
+}
+
+function Remove-ProvisionedAppIfPresent {
+    param([Parameter(Mandatory)][string]$DisplayName)
+
+    $matches = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $DisplayName }
+    if (-not $matches) {
+        Write-Log "Provisioned app not present: $DisplayName" -Level INFO
+        return $true
+    }
+
+    foreach ($match in $matches) {
+        try {
+            $null = Remove-AppxProvisionedPackage -Online -PackageName $match.PackageName -AllUsers -ErrorAction Stop
+            Write-Log "Removed provisioned app: $DisplayName" -Level SUCCESS
+        }
+        catch {
+            Write-Log "Failed to remove provisioned app ${DisplayName}: $($_.Exception.Message)" -Level WARNING
+            Add-FailedItem -Category "Post-Install Tweaks" -Item $DisplayName -Reason "Provisioned app removal failed"
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Disable-OptionalFeatureIfPresent {
+    param([Parameter(Mandatory)][string]$FeatureName)
+
+    try {
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $FeatureName -ErrorAction Stop
+    }
+    catch {
+        Write-Log "Optional feature not found or unavailable: $FeatureName" -Level INFO
+        return $true
+    }
+
+    if ($feature.State -in @("Disabled", "DisabledWithPayloadRemoved")) {
+        Write-Log "Optional feature already disabled: $FeatureName" -Level INFO
+        return $true
+    }
+
+    try {
+        $null = Disable-WindowsOptionalFeature -Online -FeatureName $FeatureName -Remove -NoRestart -ErrorAction Stop
+        Write-Log "Disabled optional feature: $FeatureName" -Level SUCCESS
+        return $true
+    }
+    catch {
+        Write-Log "Failed to disable optional feature ${FeatureName}: $($_.Exception.Message)" -Level WARNING
+        Add-FailedItem -Category "Post-Install Tweaks" -Item $FeatureName -Reason "Optional feature removal failed"
+        return $false
+    }
+}
+
+function Invoke-PostInstallTweaks {
+    $allSucceeded = $true
+
+    $appsToRemove = @(
+        "Microsoft.BingSearch",
+        "Microsoft.MicrosoftOfficeHub",
+        "Microsoft.Office.OneNote",
+        "Microsoft.SkypeApp",
+        "Microsoft.MicrosoftSolitaireCollection",
+        "MicrosoftTeams",
+        "MSTeams"
+    )
+
+    foreach ($app in $appsToRemove) {
+        if (-not (Remove-ProvisionedAppIfPresent -DisplayName $app)) {
+            $allSucceeded = $false
+        }
+    }
+
+    if (-not (Disable-OptionalFeatureIfPresent -FeatureName "Recall")) {
+        $allSucceeded = $false
+    }
+
+    try {
+        Set-RegistryValueSafe -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Communications" -Name "ConfigureChatAutoInstall" -Value 0 -Type DWord
+        Set-RegistryValueSafe -Path "HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\Start" -Name "ConfigureStartPins" -Value '{"pinnedList":[]}' -Type String
+        Set-RegistryValueSafe -Path "HKU:\.DEFAULT\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "10" -Type String
+
+        Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "HideFileExt" -Value 0 -Type DWord
+        Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Hidden" -Value 1 -Type DWord
+        Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ShowSuperHidden" -Value 1 -Type DWord
+        Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAl" -Value 0 -Type DWord
+        Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Name "SearchboxTaskbarMode" -Value 1 -Type DWord
+        Set-RegistryValueSafe -Path "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" -Name "(Default)" -Value "" -Type String
+        Set-RegistryValueSafe -Path "HKCU:\Control Panel\Mouse" -Name "MouseSpeed" -Value "0" -Type String
+        Set-RegistryValueSafe -Path "HKCU:\Control Panel\Mouse" -Name "MouseThreshold1" -Value "0" -Type String
+        Set-RegistryValueSafe -Path "HKCU:\Control Panel\Mouse" -Name "MouseThreshold2" -Value "0" -Type String
+        Set-RegistryValueSafe -Path "HKCU:\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "10" -Type String
+
+        Write-Log "Applied post-install debloat and user tweaks" -Level SUCCESS
+    }
+    catch {
+        Write-Log "Failed to apply post-install registry tweaks: $($_.Exception.Message)" -Level WARNING
+        Add-FailedItem -Category "Post-Install Tweaks" -Item "Registry Tweaks" -Reason $_.Exception.Message
+        $allSucceeded = $false
+    }
+
+    try {
+        Get-Process -Name explorer -ErrorAction SilentlyContinue | Where-Object {
+            $_.SessionId -eq (Get-Process -Id $PID).SessionId
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Log "Restarted Explorer to apply user tweaks" -Level SUCCESS
+    }
+    catch {
+        Write-Log "Failed to restart Explorer after user tweaks: $($_.Exception.Message)" -Level WARNING
+    }
+
+    return $allSucceeded
+}
+
 function Find-BackupManifest {
     $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object {
         $_.Root -ne "$($env:SystemDrive)\"
@@ -852,16 +986,41 @@ try {
         }
     }
 
-    $stepId = "registry"
+    $stepId = "postInstallTweaks"
     if ($OptionalAppsOnly) {
-        Write-Log "Step 4: Skipping registry fallback (optional apps only mode)" -Level INFO
+        Write-Log "Step 4: Skipping post-install tweaks (optional apps only mode)" -Level INFO
     }
     elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 4: Skipping registry fallback (already completed)" -Level INFO
+        Write-Log "Step 4: Skipping post-install tweaks (already completed)" -Level INFO
+        Add-SummaryItem -Step "Post-Install Tweaks" -Status "OK" -Message "Skipped (already completed)"
+    }
+    elseif ($DryRun) {
+        Write-Log "Step 4: Dry run - skipping post-install tweaks" -Level WARNING
+        Add-SummaryItem -Step "Post-Install Tweaks" -Status "WARN" -Message "Dry run: post-install tweaks skipped"
+        Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: post-install tweaks skipped"
+    }
+    else {
+        $tweaksSucceeded = Invoke-PostInstallTweaks
+        if ($tweaksSucceeded) {
+            Add-SummaryItem -Step "Post-Install Tweaks" -Status "OK" -Message "Debloat and user tweaks applied"
+            Set-StepState -StepId $stepId -Status "done" -Message "Debloat and user tweaks applied"
+        }
+        else {
+            Add-SummaryItem -Step "Post-Install Tweaks" -Status "WARN" -Message "Some tweaks failed - see Failed Installs.txt"
+            Set-StepState -StepId $stepId -Status "failed" -Message "Some tweaks failed"
+        }
+    }
+
+    $stepId = "registry"
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 5: Skipping registry fallback (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
+        Write-Log "Step 5: Skipping registry fallback (already completed)" -Level INFO
         Add-SummaryItem -Step "Registry" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 4: Dry run - skipping registry fallback" -Level WARNING
+        Write-Log "Step 5: Dry run - skipping registry fallback" -Level WARNING
         Add-SummaryItem -Step "Registry" -Status "WARN" -Message "Dry run: registry changes skipped"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: registry changes skipped"
     }
@@ -902,14 +1061,14 @@ try {
 
     $stepId = "shortcut"
     if ($OptionalAppsOnly) {
-        Write-Log "Step 5: Skipping desktop shortcut (optional apps only mode)" -Level INFO
+        Write-Log "Step 6: Skipping desktop shortcut (optional apps only mode)" -Level INFO
     }
     elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 5: Skipping desktop shortcut (already completed)" -Level INFO
+        Write-Log "Step 6: Skipping desktop shortcut (already completed)" -Level INFO
         Add-SummaryItem -Step "Shortcut" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 5: Dry run - skipping desktop shortcut" -Level WARNING
+        Write-Log "Step 6: Dry run - skipping desktop shortcut" -Level WARNING
         Add-SummaryItem -Step "Shortcut" -Status "WARN" -Message "Dry run: shortcut not created"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: shortcut not created"
     }
@@ -931,14 +1090,14 @@ try {
 
     $stepId = "restoreShortcut"
     if ($OptionalAppsOnly) {
-        Write-Log "Step 6: Skipping restore shortcut (optional apps only mode)" -Level INFO
+        Write-Log "Step 7: Skipping restore shortcut (optional apps only mode)" -Level INFO
     }
     elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 6: Skipping restore shortcut (already completed)" -Level INFO
+        Write-Log "Step 7: Skipping restore shortcut (already completed)" -Level INFO
         Add-SummaryItem -Step "Restore" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 6: Dry run - skipping restore shortcut" -Level WARNING
+        Write-Log "Step 7: Dry run - skipping restore shortcut" -Level WARNING
         Add-SummaryItem -Step "Restore" -Status "WARN" -Message "Dry run: restore shortcut not created"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: restore shortcut not created"
     }
@@ -964,14 +1123,14 @@ try {
 
     $stepId = "optionalShortcut"
     if ($OptionalAppsOnly) {
-        Write-Log "Step 7: Skipping optional apps shortcut (optional apps only mode)" -Level INFO
+        Write-Log "Step 8: Skipping optional apps shortcut (optional apps only mode)" -Level INFO
     }
     elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 7: Skipping optional apps shortcut (already completed)" -Level INFO
+        Write-Log "Step 8: Skipping optional apps shortcut (already completed)" -Level INFO
         Add-SummaryItem -Step "Optional Apps Shortcut" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 7: Dry run - skipping optional apps shortcut" -Level WARNING
+        Write-Log "Step 8: Dry run - skipping optional apps shortcut" -Level WARNING
         Add-SummaryItem -Step "Optional Apps Shortcut" -Status "WARN" -Message "Dry run: optional shortcut not created"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: optional shortcut not created"
     }
@@ -998,11 +1157,11 @@ try {
 
     $stepId = "optionalWinget"
     if (-not (Should-RunStep -StepId $stepId) -and -not $OptionalAppsOnly) {
-        Write-Log "Step 8: Skipping optional apps (already completed)" -Level INFO
+        Write-Log "Step 9: Skipping optional apps (already completed)" -Level INFO
         Add-SummaryItem -Step "Optional Apps" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 8: Dry run - skipping optional apps import" -Level WARNING
+        Write-Log "Step 9: Dry run - skipping optional apps import" -Level WARNING
         Add-SummaryItem -Step "Optional Apps" -Status "WARN" -Message "Dry run: optional apps skipped"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: optional apps skipped"
     }
@@ -1033,10 +1192,10 @@ try {
 
     $stepId = "summary"
     if (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 9: Skipping summary report (already completed)" -Level INFO
+        Write-Log "Step 10: Skipping summary report (already completed)" -Level INFO
     }
     elseif ($DryRun) {
-        Write-Log "Step 9: Dry run - skipping summary report" -Level WARNING
+        Write-Log "Step 10: Dry run - skipping summary report" -Level WARNING
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: summary skipped"
     }
     else {
