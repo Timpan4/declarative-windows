@@ -7,7 +7,7 @@
 .DESCRIPTION
     This script takes a source Windows 11 ISO and creates a customized version with:
     - autounattend.xml for unattended installation
-    - bootstrap.ps1, apps.json, and Sophia-Preset.ps1 copied via $OEM$ structure
+    - bootstrap.ps1, apps.json, optional-apps.json, and Sophia-Preset.ps1 copied via $OEM$ structure when present
     - Fully automated setup that runs on first login
 
 .PARAMETER SourceISO
@@ -202,6 +202,10 @@ try {
         "backup.template.json" = Join-Path $ScriptRoot "config\backup.template.json"
     }
 
+    $optionalFiles = @{
+        "optional-apps.json" = Join-Path $ScriptRoot "optional-apps.json"
+    }
+
     foreach ($file in $requiredFiles.GetEnumerator()) {
         if (Test-Path $file.Value) {
             Write-Success "$($file.Key) found"
@@ -209,6 +213,15 @@ try {
         else {
             Write-ErrorMessage "$($file.Key) not found at: $($file.Value)"
             throw "Missing required file: $($file.Key)"
+        }
+    }
+
+    foreach ($file in $optionalFiles.GetEnumerator()) {
+        if (Test-Path $file.Value) {
+            Write-Success "$($file.Key) found"
+        }
+        else {
+            Write-Info "$($file.Key) not found - skipping optional apps payload"
         }
     }
 
@@ -272,6 +285,11 @@ try {
     foreach ($file in $filesToCopy) {
         Copy-Item -Path $file.Path -Destination $setupPath -Force
         Write-Success "$($file.Name) copied"
+    }
+
+    if (Test-Path $optionalFiles["optional-apps.json"]) {
+        Copy-Item -Path $optionalFiles["optional-apps.json"] -Destination $setupPath -Force
+        Write-Success "optional-apps.json copied"
     }
 
     # Copy config files
@@ -355,7 +373,7 @@ try {
     Write-Host "Next Steps:" -ForegroundColor Cyan
     Write-Host "  1. Burn the ISO to a USB drive (use Rufus or similar)" -ForegroundColor White
     Write-Host "  2. Boot from the USB" -ForegroundColor White
-    Write-Host "  3. Windows will install automatically with your configuration" -ForegroundColor White
+    Write-Host "  3. Choose the target disk in Windows Setup, then let post-install automation continue" -ForegroundColor White
     Write-Host "  4. bootstrap.ps1 will run on first login" -ForegroundColor White
     Write-Host ""
 

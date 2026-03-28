@@ -4,14 +4,14 @@
 
 	.DESCRIPTION
 	This preset file contains customized Windows 11 tweaks and configurations.
-	Verified against Sophia Script v6.9.1 for Windows 11.
+	Verified against Sophia Script v7.1.4 for Windows 11.
 
 	This preset handles ALL UI tweaks, registry customizations, and OS settings.
-	AutoUnattend.xml only handles installation-time tasks (disk setup, bloatware removal).
+	AutoUnattend.xml only handles installation-time tasks (manual disk selection flow, bloatware removal).
 
 	.NOTES
-	Tested with: Sophia Script v6.9.1
-	Windows 11: 22H2 or later
+	Tested with: Sophia Script v7.1.4
+	Windows 11: 24H2 or later
 	Reference: SOPHIA-FUNCTIONS-REFERENCE.md
 
 	.LINK
@@ -93,8 +93,8 @@ AppColorMode -Dark
 # Open File Explorer to "This PC"
 OpenFileExplorerTo -ThisPC
 
-# Disable search highlights
-SearchHighlights -Disable
+# Hide search highlights
+SearchHighlights -Hide
 
 # Hide widgets icon on taskbar
 TaskbarWidgets -Hide
@@ -142,14 +142,14 @@ WindowsTips -Disable
 # Enable storage sense (auto cleanup)
 StorageSense -Enable
 
-# Disable hibernation (saves disk space)
-Hibernation -Disable
+# Keep hibernation at the Windows default unless you explicitly want it off
+# Hibernation -Disable
 
-# Set power plan to high performance
-PowerPlan -High
+# Keep the default balanced power plan for main-machine use
+# PowerPlan -High
 
 # Enable long path support (>260 characters)
-Win32LongPathSupport -Enable
+Win32LongPathsSupport -Enable
 
 # Don't let Windows manage default printer
 WindowsManageDefaultPrinter -Disable
@@ -175,13 +175,13 @@ StickyShift -Disable
 # Disable autoplay for all media
 Autoplay -Disable
 
-# Don't save zone information about files from Internet
-SaveZoneInformation -Disable
+# Keep zone information on downloaded files for SmartScreen/Attachment Manager
+# SaveZoneInformation -Disable
 #endregion System
 
 #region Windows Features
-# Install Windows Subsystem for Linux
-Install-WSL
+# Install Windows Subsystem for Linux when explicitly needed
+# Install-WSL
 
 # Note: .NET 3.5 can be installed via WindowsCapabilities if needed
 # WindowsCapabilities -Install -Names "NetFx3~~~~"
@@ -212,14 +212,14 @@ XboxGameTips -Disable
 #endregion Gaming
 
 #region Scheduled Tasks
-# Disable Windows cleanup scheduled task
-CleanupTask -Disable
+# Delete Sophia Windows cleanup scheduled task if it exists
+CleanupTask -Delete
 
-# Disable SoftwareDistributionTask
-SoftwareDistributionTask -Disable
+# Delete Sophia SoftwareDistribution cleanup task if it exists
+SoftwareDistributionTask -Delete
 
-# Disable temp files cleanup task
-TempTask -Disable
+# Delete Sophia temp cleanup task if it exists
+TempTask -Delete
 #endregion Scheduled Tasks
 
 #region Microsoft Defender & Security
@@ -232,13 +232,11 @@ PUAppsDetection -Enable
 # Enable Microsoft Defender Sandbox
 DefenderSandbox -Enable
 
-# Disable SmartScreen for apps and files
-AppsSmartScreen -Disable
+# Keep SmartScreen enabled for apps and downloaded files
+# AppsSmartScreen -Disable
 
-# Enable DNS-over-HTTPS (Cloudflare)
-DNSoverHTTPS -Enable -PrimaryDNS 1.1.1.1 -SecondaryDNS 1.0.0.1
-
-# Note: Change to Google DNS if preferred: -PrimaryDNS 8.8.8.8 -SecondaryDNS 8.8.4.4
+# Optional: enable DNS-over-HTTPS with a named provider if you want to force it
+# DNSoverHTTPS -Cloudflare
 #endregion Microsoft Defender & Security
 
 #region Context Menu
@@ -258,7 +256,7 @@ OpenWindowsTerminalContext -Show
 #endregion Context Menu
 
 <#
-	VERIFIED AGAINST: Sophia Script v6.9.1
+	VERIFIED AGAINST: Sophia Script v7.1.4
 	REFERENCE: SOPHIA-FUNCTIONS-REFERENCE.md
 
 	DIVISION OF RESPONSIBILITIES:
@@ -268,8 +266,8 @@ OpenWindowsTerminalContext -Show
 	WHAT THIS PRESET INCLUDES:
 	1. Privacy: Disabled telemetry, Bing, tips, suggested content, tailored experiences
 	2. UI: Dark mode, show file extensions/hidden files, left taskbar, minimal icons
-	3. System: High performance, storage sense, disabled hibernation, long paths
-	4. Security: Network protection, PUA detection, Defender sandbox, DNS-over-HTTPS
+	3. System: storage sense, long paths, conservative main-machine defaults
+	4. Security: Network protection, PUA detection, Defender sandbox
 	5. Debloat: Disabled Xbox features, autoplay, unnecessary scheduled tasks
 
 	TO CUSTOMIZE:

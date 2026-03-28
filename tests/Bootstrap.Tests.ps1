@@ -9,6 +9,12 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "Get-FileHash"
     }
 
+    It "supports optional apps manifest and marker" {
+        $scriptContent | Should -Match "optional-apps\.json"
+        $scriptContent | Should -Match "optional-winget\.completed"
+        $scriptContent | Should -Match "OptionalAppsOnly"
+    }
+
     It "tracks Sophia completion marker with hash" {
         $scriptContent | Should -Match "sophia\.completed"
         $scriptContent | Should -Match "Get-FileHash"
@@ -48,6 +54,11 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "restore-backup\.ps1"
     }
 
+    It "creates an optional apps shortcut and prompt" {
+        $scriptContent | Should -Match "Install Optional Apps\.lnk"
+        $scriptContent | Should -Match "Install optional apps now\? \(Y/N\)"
+    }
+
     It "can fall back when repo clone fails" {
         $scriptContent | Should -Match "git"
         $scriptContent | Should -Match "continuing with C:\\Setup"
@@ -70,7 +81,7 @@ Describe "bootstrap.ps1 static checks" {
 
     It "checks individual packages after WinGet import" {
         $scriptContent | Should -Match "stillMissing"
-        $scriptContent | Should -Match "Not installed after import"
+        $scriptContent | Should -Match "Not installed after import from"
     }
 
     It "keeps partial WinGet failures retryable" {

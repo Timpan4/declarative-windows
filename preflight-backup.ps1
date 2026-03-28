@@ -34,6 +34,24 @@ function Write-Success {
     Write-Host "[ OK ] $Message" -ForegroundColor Green
 }
 
+function Write-BackupProgress {
+    param(
+        [string]$Activity,
+        [string]$Status,
+        [int]$Current,
+        [int]$Total
+    )
+
+    $percentComplete = if ($Total -gt 0) {
+        [int][Math]::Floor(($Current / $Total) * 100)
+    }
+    else {
+        100
+    }
+
+    Write-Progress -Activity $Activity -Status $Status -PercentComplete $percentComplete
+}
+
 function Resolve-EffectiveConfigPath {
     param([string]$RequestedPath)
 
@@ -197,11 +215,9 @@ function Copy-DirectoryWithRobocopy {
         "/R:1",
         "/W:1",
         "/XJ",
-        "/NFL",
         "/NDL",
         "/NJH",
-        "/NJS",
-        "/NP"
+        "/NJS"
     )
 
     foreach ($pattern in $ExcludePatterns) {
@@ -211,7 +227,12 @@ function Copy-DirectoryWithRobocopy {
         }
     }
 
-    $null = & robocopy @robocopyArgs
+    & robocopy @robocopyArgs 2>&1 | ForEach-Object {
+        $line = $_.ToString().Trim()
+        if ($line) {
+            Write-Host "    $line"
+        }
+    }
     $exitCode = $LASTEXITCODE
     $success = $exitCode -lt 8
 
@@ -293,8 +314,13 @@ foreach ($path in @($sessionRoot, $filesRoot, $repoFilesRoot, $exportsRoot, $rep
 
 $manifestRules = New-Object System.Collections.Generic.List[object]
 $failedRules = New-Object System.Collections.Generic.List[object]
+$totalRuleCount = @($rules).Count
+$currentRuleIndex = 0
 
 foreach ($rule in $rules) {
+    $currentRuleIndex++
+    Write-BackupProgress -Activity "Backing up configured folders" -Status "[$currentRuleIndex/$totalRuleCount] $($rule.label)" -Current $currentRuleIndex -Total $totalRuleCount
+
     if (-not (Test-Path $rule.source)) {
         if ($rule.required) {
             $failedRules.Add([pscustomobject]@{ id = $rule.id; message = "Required source path not found" })
@@ -322,8 +348,15 @@ foreach ($rule in $rules) {
     }
 }
 
+Write-Progress -Activity "Backing up configured folders" -Completed
+
 $manifestRepoFiles = New-Object System.Collections.Generic.List[object]
+$totalRepoFileCount = @($repoFiles).Count
+$currentRepoFileIndex = 0
 foreach ($repoFile in $repoFiles) {
+    $currentRepoFileIndex++
+    Write-BackupProgress -Activity "Backing up personal repo files" -Status "[$currentRepoFileIndex/$totalRepoFileCount] $($repoFile.relativePath)" -Current $currentRepoFileIndex -Total $totalRepoFileCount
+
     $destination = Join-Path $repoFilesRoot $repoFile.relativePath
     $destinationParent = Split-Path -Path $destination -Parent
     if ($PSCmdlet.ShouldProcess($destinationParent, "Create repo file backup directory")) {
@@ -347,8 +380,12 @@ foreach ($repoFile in $repoFiles) {
     $manifestRepoFiles.Add([pscustomobject]$entry)
 }
 
+Write-Progress -Activity "Backing up personal repo files" -Completed
+
 $wingetExportPath = Join-Path $exportsRoot "apps.json"
+Write-Progress -Activity "Exporting WinGet inventory" -Status "Running winget export" -PercentComplete 0
 $wingetExported = Export-WingetInventory -OutputPath $wingetExportPath
+Write-Progress -Activity "Exporting WinGet inventory" -Completed
 
 $manifest = [ordered]@{
     manifestVersion = 1

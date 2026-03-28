@@ -163,7 +163,7 @@
 - [ ] 🟡 ✅ Test Sophia Script execution on fresh Windows
 - [ ] 🟡 ✅ Verify desktop summary log is created correctly
 - [ ] 🟡 ✅ Test "continue where left off" after simulated failure
-- [ ] 🟢 ✅ Verify all scripts work with Windows 11 (22H2 or later)
+- [ ] 🟢 ✅ Verify all scripts work with Windows 11 (24H2 or later)
 
 ---
 

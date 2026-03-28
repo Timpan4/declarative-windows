@@ -13,17 +13,20 @@
 param(
     [switch]$DryRun,
     [switch]$Force,
-    [switch]$PromptRestart
+    [switch]$PromptRestart,
+    [switch]$OptionalAppsOnly
 )
 
 $ErrorActionPreference = "Continue"
 $SetupPath = "C:\Setup"
 $LogFile = Join-Path $SetupPath "install.log"
 $AppsJson = Join-Path $SetupPath "apps.json"
+$OptionalAppsJson = Join-Path $SetupPath "optional-apps.json"
 $RestoreScript = Join-Path $SetupPath "restore-backup.ps1"
 $SophiaPreset = Join-Path $SetupPath "Sophia-Preset.ps1"
 $SophiaMarker = Join-Path $SetupPath "sophia.completed"
 $WingetMarker = Join-Path $SetupPath "winget.completed"
+$OptionalWingetMarker = Join-Path $SetupPath "optional-winget.completed"
 $RegistryConfig = Join-Path $SetupPath "config\registry.json"
 $RegistryScript = Join-Path $SetupPath "apply-registry.ps1"
 $StateFile = Join-Path $SetupPath "state.json"
@@ -35,7 +38,7 @@ $SophiaVersion = "7.1.4"
 $SophiaZipName = "Sophia.Script.for.Windows.11.v$SophiaVersion.zip"
 $SophiaDownloadUrl = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$SophiaVersion/$SophiaZipName"
 $FailedInstallsLog = Join-Path $SetupPath "failed-installs.log"
-$StepIds = @("winget", "repo", "sophia", "registry", "shortcut", "restoreShortcut", "summary")
+$StepIds = @("winget", "repo", "sophia", "registry", "shortcut", "restoreShortcut", "optionalShortcut", "optionalWinget", "summary")
 $SetupState = $null
 $SummaryItems = [System.Collections.Generic.List[object]]::new()
 $FailedItems = [System.Collections.Generic.List[object]]::new()
@@ -428,6 +431,150 @@ function Write-FilteredAppsJson {
     $filteredData | ConvertTo-Json -Depth 10 | Set-Content -Path $OutputPath -Force
 }
 
+function Invoke-WingetManifestInstall {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ManifestPath,
+
+        [Parameter(Mandatory)]
+        [string]$StepId,
+
+        [Parameter(Mandatory)]
+        [string]$SummaryStep,
+
+        [Parameter(Mandatory)]
+        [string]$MarkerPath,
+
+        [Parameter(Mandatory)]
+        [string]$ManifestLabel,
+
+        [Parameter(Mandatory)]
+        [string]$MissingManifestMessage
+    )
+
+    $tempAppsJson = $null
+
+    if (Test-Path $ManifestPath) {
+        try {
+            Write-Log "Found $ManifestLabel at $ManifestPath" -Level INFO
+
+            if (-not (Wait-ForNetwork)) {
+                Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "Network unavailable; skipped install"
+                Set-StepState -StepId $StepId -Status "failed" -Message "Network unavailable"
+                return $false
+            }
+
+            $appsData = Get-Content -Path $ManifestPath -Raw | ConvertFrom-Json
+            $packageIds = Get-WingetPackageIdsFromJson -Path $ManifestPath
+
+            if (-not $packageIds -or $packageIds.Count -eq 0) {
+                Write-Log "$ManifestLabel contains no packages to install" -Level WARNING
+                Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message "No packages found in $ManifestLabel"
+                Set-StepState -StepId $StepId -Status "done" -Message "No packages found"
+                return $true
+            }
+
+            $appsHash = (Get-FileHash -Path $ManifestPath -Algorithm SHA256).Hash
+            $markerHash = $null
+            if (Test-Path $MarkerPath) {
+                $markerHash = (Get-Content -Path $MarkerPath -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+            }
+
+            $missingPackages = foreach ($packageId in $packageIds) {
+                if (-not (Test-WingetPackageInstalled -PackageId $packageId)) {
+                    $packageId
+                }
+            }
+
+            if (-not $missingPackages) {
+                Write-Log "All packages from $ManifestLabel are already installed" -Level SUCCESS
+                Set-Content -Path $MarkerPath -Value $appsHash -Force
+                Add-SummaryItem -Step $SummaryStep -Status "OK" -Message "Already up to date ($MarkerPath)"
+                Set-StepState -StepId $StepId -Status "done" -Message "Already up to date"
+                return $true
+            }
+
+            if ($markerHash -and $markerHash -ne $appsHash) {
+                Write-Log "$ManifestLabel changed since last WinGet run" -Level INFO
+            }
+
+            $tempAppsJson = Join-Path $env:TEMP "apps-missing-$(Get-Random).json"
+            Write-FilteredAppsJson -AppsData $appsData -PackageIds $missingPackages -OutputPath $tempAppsJson
+
+            Write-Log "Installing $($missingPackages.Count) missing packages from $ManifestLabel" -Level INFO
+            $null = winget import $tempAppsJson --accept-package-agreements --accept-source-agreements 2>&1
+
+            $stillMissing = foreach ($packageId in $missingPackages) {
+                if (-not (Test-WingetPackageInstalled -PackageId $packageId)) {
+                    $packageId
+                }
+            }
+
+            foreach ($packageId in $stillMissing) {
+                Add-FailedItem -Category $SummaryStep -Item $packageId -Reason "Not installed after import from $ManifestLabel"
+                Write-Log "WARNING: $packageId still not installed after WinGet import from $ManifestLabel" -Level WARNING
+            }
+
+            if (-not $stillMissing) {
+                Write-Log "WinGet import from $ManifestLabel completed successfully" -Level SUCCESS
+                Set-Content -Path $MarkerPath -Value $appsHash -Force
+                Add-SummaryItem -Step $SummaryStep -Status "OK" -Message "Installed $($missingPackages.Count) packages"
+                Set-StepState -StepId $StepId -Status "done" -Message "Installed $($missingPackages.Count) packages"
+                return $true
+            }
+
+            $failCount = @($stillMissing).Count
+            Write-Log "WinGet import from $ManifestLabel finished; $failCount package(s) failed" -Level WARNING
+            Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message "$failCount package(s) failed - see Failed Installs.txt"
+            Set-StepState -StepId $StepId -Status "failed" -Message "$failCount package(s) failed"
+            return $false
+        }
+        catch {
+            Write-Log "ERROR during WinGet import from ${ManifestLabel}: $($_.Exception.Message)" -Level ERROR
+            Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "WinGet import failed"
+            Set-StepState -StepId $StepId -Status "failed" -Message "WinGet import failed"
+            return $false
+        }
+        finally {
+            if ($tempAppsJson -and (Test-Path $tempAppsJson)) {
+                Remove-Item -Path $tempAppsJson -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Write-Log "WARNING: $ManifestLabel not found at $ManifestPath - skipping application import" -Level WARNING
+    Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message $MissingManifestMessage
+    Set-StepState -StepId $StepId -Status "done" -Message $MissingManifestMessage
+    return $false
+}
+
+function New-DesktopShortcut {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ShortcutPath,
+
+        [Parameter(Mandatory)]
+        [string]$TargetPath,
+
+        [Parameter(Mandatory)]
+        [string]$Arguments,
+
+        [Parameter(Mandatory)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$Description
+    )
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    $shortcut.TargetPath = $TargetPath
+    $shortcut.Arguments = $Arguments
+    $shortcut.WorkingDirectory = $WorkingDirectory
+    $shortcut.Description = $Description
+    $shortcut.Save()
+}
+
 function Find-BackupManifest {
     $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object {
         $_.Root -ne "$($env:SystemDrive)\"
@@ -576,8 +723,15 @@ try {
         Write-Log "Dry run mode enabled; no system changes will be applied" -Level WARNING
     }
 
+    if ($OptionalAppsOnly) {
+        Write-Log "Optional apps only mode enabled; skipping core setup steps" -Level INFO
+    }
+
     $stepId = "winget"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 1: Skipping WinGet core apps (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 1: Skipping WinGet (already completed)" -Level INFO
         Add-SummaryItem -Step "WinGet" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -586,102 +740,15 @@ try {
         Add-SummaryItem -Step "WinGet" -Status "WARN" -Message "Dry run: WinGet import skipped"
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: WinGet import skipped"
     }
-    elseif (Test-Path $AppsJson) {
-        $tempAppsJson = $null
-
-        try {
-            Write-Log "Found apps.json at $AppsJson" -Level INFO
-
-            if (-not (Wait-ForNetwork)) {
-                Add-SummaryItem -Step "WinGet" -Status "FAIL" -Message "Network unavailable; skipped app install"
-                Set-StepState -StepId $stepId -Status "failed" -Message "Network unavailable"
-            }
-            else {
-                $appsData = Get-Content -Path $AppsJson -Raw | ConvertFrom-Json
-                $packageIds = Get-WingetPackageIdsFromJson -Path $AppsJson
-
-                if (-not $packageIds -or $packageIds.Count -eq 0) {
-                    Write-Log "apps.json contains no packages to install" -Level WARNING
-                    Add-SummaryItem -Step "WinGet" -Status "WARN" -Message "No packages found in apps.json"
-                    Set-StepState -StepId $stepId -Status "done" -Message "No packages found"
-                }
-                else {
-                    $appsHash = (Get-FileHash -Path $AppsJson -Algorithm SHA256).Hash
-                    $markerHash = $null
-                    if (Test-Path $WingetMarker) {
-                        $markerHash = (Get-Content -Path $WingetMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-                    }
-
-                    $missingPackages = foreach ($packageId in $packageIds) {
-                        if (-not (Test-WingetPackageInstalled -PackageId $packageId)) {
-                            $packageId
-                        }
-                    }
-
-                    if (-not $missingPackages) {
-                        Write-Log "All WinGet packages already installed" -Level SUCCESS
-                        Set-Content -Path $WingetMarker -Value $appsHash -Force
-                        Add-SummaryItem -Step "WinGet" -Status "OK" -Message "Already up to date ($WingetMarker)"
-                        Set-StepState -StepId $stepId -Status "done" -Message "Already up to date"
-                    }
-                    else {
-                        if ($markerHash -and $markerHash -ne $appsHash) {
-                            Write-Log "apps.json changed since last WinGet run" -Level INFO
-                        }
-
-                        $tempAppsJson = Join-Path $env:TEMP "apps-missing-$(Get-Random).json"
-                        Write-FilteredAppsJson -AppsData $appsData -PackageIds $missingPackages -OutputPath $tempAppsJson
-
-                        Write-Log "Installing $($missingPackages.Count) missing packages" -Level INFO
-                        $null = winget import $tempAppsJson --accept-package-agreements --accept-source-agreements 2>&1
-
-                        # Check each package individually so we know exactly what failed
-                        $stillMissing = foreach ($packageId in $missingPackages) {
-                            if (-not (Test-WingetPackageInstalled -PackageId $packageId)) {
-                                $packageId
-                            }
-                        }
-
-                        foreach ($packageId in $stillMissing) {
-                            Add-FailedItem -Category "WinGet Packages" -Item $packageId -Reason "Not installed after import"
-                            Write-Log "WARNING: $packageId still not installed after WinGet import" -Level WARNING
-                        }
-
-                        if (-not $stillMissing) {
-                            Write-Log "WinGet import completed successfully" -Level SUCCESS
-                            Set-Content -Path $WingetMarker -Value $appsHash -Force
-                            Add-SummaryItem -Step "WinGet" -Status "OK" -Message "Installed $($missingPackages.Count) packages"
-                            Set-StepState -StepId $stepId -Status "done" -Message "Installed $($missingPackages.Count) packages"
-                        }
-                        else {
-                            $failCount = @($stillMissing).Count
-                            Write-Log "WinGet import finished; $failCount package(s) failed" -Level WARNING
-                            Add-SummaryItem -Step "WinGet" -Status "WARN" -Message "$failCount package(s) failed - see Failed Installs.txt"
-                            Set-StepState -StepId $stepId -Status "failed" -Message "$failCount package(s) failed"
-                        }
-                    }
-                }
-            }
-        }
-        catch {
-            Write-Log "ERROR during WinGet import: $($_.Exception.Message)" -Level ERROR
-            Add-SummaryItem -Step "WinGet" -Status "FAIL" -Message "WinGet import failed"
-            Set-StepState -StepId $stepId -Status "failed" -Message "WinGet import failed"
-        }
-        finally {
-            if ($tempAppsJson -and (Test-Path $tempAppsJson)) {
-                Remove-Item -Path $tempAppsJson -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
     else {
-        Write-Log "WARNING: apps.json not found at $AppsJson - skipping application import" -Level WARNING
-        Add-SummaryItem -Step "WinGet" -Status "WARN" -Message "apps.json not found"
-        Set-StepState -StepId $stepId -Status "done" -Message "apps.json not found"
+        $null = Invoke-WingetManifestInstall -ManifestPath $AppsJson -StepId $stepId -SummaryStep "WinGet" -MarkerPath $WingetMarker -ManifestLabel "apps.json" -MissingManifestMessage "apps.json not found"
     }
 
     $stepId = "repo"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 2: Skipping canonical repo restore (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 2: Skipping canonical repo restore (already completed)" -Level INFO
         Add-SummaryItem -Step "Repo" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -710,7 +777,10 @@ try {
     }
 
     $stepId = "sophia"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 3: Skipping Sophia (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 3: Skipping Sophia (already completed)" -Level INFO
         Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -783,7 +853,10 @@ try {
     }
 
     $stepId = "registry"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 4: Skipping registry fallback (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 4: Skipping registry fallback (already completed)" -Level INFO
         Add-SummaryItem -Step "Registry" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -828,7 +901,10 @@ try {
     $desktopPath = [Environment]::GetFolderPath("Desktop")
 
     $stepId = "shortcut"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 5: Skipping desktop shortcut (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 5: Skipping desktop shortcut (already completed)" -Level INFO
         Add-SummaryItem -Step "Shortcut" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -840,14 +916,8 @@ try {
     else {
         try {
             $shortcutPath = Join-Path $desktopPath "Run Windows Setup.lnk"
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut($shortcutPath)
             $bootstrapTarget = Get-RunBootstrapTarget
-            $shortcut.TargetPath = "powershell.exe"
-            $shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$bootstrapTarget`""
-            $shortcut.WorkingDirectory = Split-Path -Path $bootstrapTarget -Parent
-            $shortcut.Description = "Re-run declarative Windows setup"
-            $shortcut.Save()
+            New-DesktopShortcut -ShortcutPath $shortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$bootstrapTarget`"" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Re-run declarative Windows setup"
 
             Add-SummaryItem -Step "Shortcut" -Status "OK" -Message "Run Windows Setup.lnk created"
             Set-StepState -StepId $stepId -Status "done" -Message "Shortcut created"
@@ -860,7 +930,10 @@ try {
     }
 
     $stepId = "restoreShortcut"
-    if (-not (Should-RunStep -StepId $stepId)) {
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 6: Skipping restore shortcut (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 6: Skipping restore shortcut (already completed)" -Level INFO
         Add-SummaryItem -Step "Restore" -Status "OK" -Message "Skipped (already completed)"
     }
@@ -877,13 +950,7 @@ try {
     else {
         try {
             $restoreShortcutPath = Join-Path $desktopPath "Restore My Files.lnk"
-            $restoreShell = New-Object -ComObject WScript.Shell
-            $restoreShortcut = $restoreShell.CreateShortcut($restoreShortcutPath)
-            $restoreShortcut.TargetPath = "powershell.exe"
-            $restoreShortcut.Arguments = "-ExecutionPolicy Bypass -File `"$RestoreScript`""
-            $restoreShortcut.WorkingDirectory = $SetupPath
-            $restoreShortcut.Description = "Restore backed up files after Windows reinstall"
-            $restoreShortcut.Save()
+            New-DesktopShortcut -ShortcutPath $restoreShortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$RestoreScript`"" -WorkingDirectory $SetupPath -Description "Restore backed up files after Windows reinstall"
 
             Add-SummaryItem -Step "Restore" -Status "OK" -Message "Restore My Files.lnk created"
             Set-StepState -StepId $stepId -Status "done" -Message "Restore shortcut created"
@@ -895,12 +962,81 @@ try {
         }
     }
 
-    $stepId = "summary"
-    if (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 7: Skipping summary report (already completed)" -Level INFO
+    $stepId = "optionalShortcut"
+    if ($OptionalAppsOnly) {
+        Write-Log "Step 7: Skipping optional apps shortcut (optional apps only mode)" -Level INFO
+    }
+    elseif (-not (Should-RunStep -StepId $stepId)) {
+        Write-Log "Step 7: Skipping optional apps shortcut (already completed)" -Level INFO
+        Add-SummaryItem -Step "Optional Apps Shortcut" -Status "OK" -Message "Skipped (already completed)"
     }
     elseif ($DryRun) {
-        Write-Log "Step 7: Dry run - skipping summary report" -Level WARNING
+        Write-Log "Step 7: Dry run - skipping optional apps shortcut" -Level WARNING
+        Add-SummaryItem -Step "Optional Apps Shortcut" -Status "WARN" -Message "Dry run: optional shortcut not created"
+        Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: optional shortcut not created"
+    }
+    elseif (-not (Test-Path $OptionalAppsJson)) {
+        Write-Log "optional-apps.json not found at $OptionalAppsJson - skipping optional apps shortcut" -Level INFO
+        Add-SummaryItem -Step "Optional Apps Shortcut" -Status "WARN" -Message "optional-apps.json not found"
+        Set-StepState -StepId $stepId -Status "done" -Message "optional-apps.json not found"
+    }
+    else {
+        try {
+            $optionalShortcutPath = Join-Path $desktopPath "Install Optional Apps.lnk"
+            $bootstrapTarget = Get-RunBootstrapTarget
+            New-DesktopShortcut -ShortcutPath $optionalShortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$bootstrapTarget`" -OptionalAppsOnly" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Install optional declarative Windows apps later"
+
+            Add-SummaryItem -Step "Optional Apps Shortcut" -Status "OK" -Message "Install Optional Apps.lnk created"
+            Set-StepState -StepId $stepId -Status "done" -Message "Optional apps shortcut created"
+        }
+        catch {
+            Write-Log "WARNING: Failed to create optional apps shortcut: $($_.Exception.Message)" -Level WARNING
+            Add-SummaryItem -Step "Optional Apps Shortcut" -Status "WARN" -Message "Failed to create optional shortcut"
+            Set-StepState -StepId $stepId -Status "failed" -Message "Failed to create optional shortcut"
+        }
+    }
+
+    $stepId = "optionalWinget"
+    if (-not (Should-RunStep -StepId $stepId) -and -not $OptionalAppsOnly) {
+        Write-Log "Step 8: Skipping optional apps (already completed)" -Level INFO
+        Add-SummaryItem -Step "Optional Apps" -Status "OK" -Message "Skipped (already completed)"
+    }
+    elseif ($DryRun) {
+        Write-Log "Step 8: Dry run - skipping optional apps import" -Level WARNING
+        Add-SummaryItem -Step "Optional Apps" -Status "WARN" -Message "Dry run: optional apps skipped"
+        Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: optional apps skipped"
+    }
+    elseif (-not (Test-Path $OptionalAppsJson)) {
+        if ($OptionalAppsOnly) {
+            $null = Invoke-WingetManifestInstall -ManifestPath $OptionalAppsJson -StepId $stepId -SummaryStep "Optional Apps" -MarkerPath $OptionalWingetMarker -ManifestLabel "optional-apps.json" -MissingManifestMessage "optional-apps.json not found"
+        }
+    }
+    else {
+        $installOptionalApps = $OptionalAppsOnly
+
+        if (-not $installOptionalApps) {
+            $optionalAppsResponse = Read-Host "Install optional apps now? (Y/N)"
+            if ($optionalAppsResponse -match '^(y|yes)$') {
+                $installOptionalApps = $true
+            }
+            else {
+                Write-Log "Optional apps skipped by user" -Level INFO
+                Add-SummaryItem -Step "Optional Apps" -Status "WARN" -Message "Skipped by user - use Install Optional Apps.lnk later"
+                Set-StepState -StepId $stepId -Status "pending" -Message "Skipped by user"
+            }
+        }
+
+        if ($installOptionalApps) {
+            $null = Invoke-WingetManifestInstall -ManifestPath $OptionalAppsJson -StepId $stepId -SummaryStep "Optional Apps" -MarkerPath $OptionalWingetMarker -ManifestLabel "optional-apps.json" -MissingManifestMessage "optional-apps.json not found"
+        }
+    }
+
+    $stepId = "summary"
+    if (-not (Should-RunStep -StepId $stepId)) {
+        Write-Log "Step 9: Skipping summary report (already completed)" -Level INFO
+    }
+    elseif ($DryRun) {
+        Write-Log "Step 9: Dry run - skipping summary report" -Level WARNING
         Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: summary skipped"
     }
     else {

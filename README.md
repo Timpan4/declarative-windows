@@ -71,6 +71,8 @@ winget export -o apps.json --source winget
 
 For personal usage, keep `apps.json` out of git. The repo ships `apps-template.json`, and the backup workflow preserves your personal `apps.json` so it can be restored into the cloned repo after reinstall.
 
+If you want a second-stage app list, create `optional-apps.json` alongside `apps.json`. `apps.json` installs automatically during bootstrap, while `optional-apps.json` is offered with a yes/no prompt after first login and can also be installed later from a desktop shortcut.
+
 ### Backup Before Reinstall
 
 Create a personal backup config by copying `config\backup.template.json` to `config\backup.json`, then enable the known folders and extra paths you want to preserve.
@@ -121,6 +123,13 @@ winget import apps.json --ignore-versions
 winget import apps.json --accept-package-agreements --accept-source-agreements
 ```
 
+Optional apps can use the same manifest format:
+
+```powershell
+Copy-Item apps.json optional-apps.json
+# Then edit optional-apps.json for apps you want to install later
+```
+
 ### 4. Find Package IDs
 
 ```powershell
@@ -137,7 +146,7 @@ If you want to test OS tweaks before automation:
 
 ```powershell
 # 1. Download Sophia Script for Windows 11
-Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/latest/download/Sophia.Script.for.Windows.11.v6.9.1.zip" -OutFile "SophiaScript.zip"
+Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/latest/download/Sophia.Script.for.Windows.11.v7.1.4.zip" -OutFile "SophiaScript.zip"
 
 # 2. Extract the archive
 Expand-Archive -Path "SophiaScript.zip" -DestinationPath ".\SophiaScript" -Force
@@ -167,7 +176,8 @@ declarative-windows/
 ├── CLAUDE.md              # Project guidance for Claude Code
 ├── brainstorm.md          # Design discussions
 │
-├── apps.json              # Your WinGet package list (create this)
+├── apps.json              # Auto-installed WinGet package list
+├── optional-apps.json     # Prompted/later WinGet package list (optional)
 ├── Sophia-Preset.ps1      # Custom Sophia Script configuration
 ├── autounattend.xml       # Windows unattended install config
 ├── bootstrap.ps1          # Main orchestration script
@@ -184,7 +194,7 @@ declarative-windows/
 
 ## Windows Version Support
 
-**Supported:** Windows 11 (22H2 or later)
+**Supported:** Windows 11 (24H2 or later)
 
 **Not Supported:** Windows 10
 

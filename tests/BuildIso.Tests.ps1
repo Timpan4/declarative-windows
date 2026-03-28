@@ -32,6 +32,11 @@ Describe "build-iso.ps1 static checks" {
         $scriptContent | Should -Match "backup\.template\.json"
     }
 
+    It "supports optional apps payload when present" {
+        $scriptContent | Should -Match "optional-apps\.json"
+        $scriptContent | Should -Match "skipping optional apps payload"
+    }
+
     It "does not reference MountDir anymore" {
         $scriptContent.Contains('$MountDir') | Should -BeFalse
     }
