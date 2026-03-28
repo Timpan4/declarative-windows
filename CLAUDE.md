@@ -18,7 +18,7 @@ Configuration files and documentation are already in place.
 
 ## 🪟 Windows Version Support
 
-**Supported:** Windows 11 (22H2 or later) ONLY
+**Supported:** Windows 11 (24H2 or later) ONLY
 
 **Not Supported:** Windows 10
 
@@ -79,7 +79,7 @@ declarative-windows/
 
 ### Workflow 1: Custom ISO Generation (Recommended)
 
-**Goal:** Create a custom Windows ISO with all configs baked in - one command, fully automated
+**Goal:** Create a custom Windows ISO with all configs baked in - one command, automated after manual disk selection
 
 ```bash
 # 1. Generate custom ISO (one command)
@@ -87,8 +87,8 @@ declarative-windows/
 
 # 2. Burn ISO to USB or boot in VM
 
-# 3. Boot from ISO - Windows installs automatically with:
-#    - autounattend.xml configures Windows setup
+# 3. Boot from ISO - choose the target disk/partition, then setup continues with:
+#    - autounattend.xml configures Windows setup after disk selection
 #    - Files copied to C:\Setup via $OEM$ folder
 #    - bootstrap.ps1 runs automatically after first login
 #    - Desktop shortcut created for manual re-runs

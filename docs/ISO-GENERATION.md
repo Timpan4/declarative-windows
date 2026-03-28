@@ -4,7 +4,7 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 
 ## Prerequisites
 
-- Windows 11 (22H2 or later) ISO
+- Windows 11 (24H2 or later) ISO
 - Windows ADK **or** a direct `oscdimg.exe` download URL
 - Administrator privileges
 - At least 10GB of free disk space
@@ -47,6 +47,7 @@ Custom-ISO:\
         └── Setup\
             ├── bootstrap.ps1
             ├── apps.json
+            ├── optional-apps.json (optional)
             ├── Sophia-Preset.ps1
             ├── restore-backup.ps1
             ├── apply-registry.ps1
@@ -63,6 +64,7 @@ During installation, you still choose the target disk and partition in Windows S
 C:\Setup\
 ├── bootstrap.ps1
 ├── apps.json
+├── optional-apps.json (optional)
 ├── Sophia-Preset.ps1
 ├── apply-registry.ps1
 ├── state.json
@@ -75,6 +77,7 @@ A desktop shortcut is created for manual re-runs:
 
 - `Run Windows Setup.lnk`
 - `Restore My Files.lnk`
+- `Install Optional Apps.lnk` (only when `optional-apps.json` exists)
 
 After first login, bootstrap attempts to clone the original repo remote into `%USERPROFILE%\Documents\declarative-windows`. `C:\Setup` remains the staging area and fallback location if cloning fails.
 
@@ -83,7 +86,8 @@ After first login, bootstrap attempts to clone the original repo remote into `%U
 1. Boot from the custom ISO.
 2. Choose the destination disk and partition layout manually in Windows Setup.
 3. Complete the normal Windows account setup flow.
-4. Let `bootstrap.ps1` continue the app install and post-install configuration automatically after first login.
+4. Let `bootstrap.ps1` continue the core app install and post-install configuration automatically after first login.
+5. If `optional-apps.json` exists, answer the yes/no prompt to install optional apps now or use the desktop shortcut later.
 
 ## Logs and Resume State
 
@@ -97,6 +101,12 @@ Use the desktop shortcut or run:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1
+```
+
+To install optional apps later without rerunning the whole flow:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1 -OptionalAppsOnly
 ```
 
 ## Backup And Restore Flow

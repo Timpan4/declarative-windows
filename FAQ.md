@@ -19,7 +19,7 @@ Before reinstall, you can also run a declarative backup workflow that preserves 
 
 ## What Windows versions are supported?
 
-Windows 11 only (22H2 or later). Windows 10 is not supported.
+Windows 11 only (24H2 or later). Windows 10 is not supported.
 
 ## Do I need to create a custom ISO?
 
@@ -36,6 +36,8 @@ winget export -o apps.json
 ```
 
 Then edit the JSON to remove unwanted apps.
+
+If you want some apps to stay optional after reinstall, create `optional-apps.json` with the same WinGet manifest format. Bootstrap prompts for it after first login and also creates `Install Optional Apps.lnk` for later use.
 
 ## Where does the repo live after reinstall?
 
