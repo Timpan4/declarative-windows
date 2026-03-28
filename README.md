@@ -69,9 +69,9 @@ winget export -o apps.json --source winget
 
 **Note:** Only captures apps installed via WinGet.
 
-For personal usage, keep `apps.json` out of git. The repo ships `apps-template.json`, and the backup workflow preserves your personal `apps.json` so it can be restored into the cloned repo after reinstall.
+For personal usage, keep `apps.json`, `optional-apps.json`, and `config\backup.json` out of git. The repo ships `apps-template.json`, `optional-apps-template.json`, and `config\backup.template.json`, and the backup workflow preserves your personal files so they can be restored into the cloned repo after reinstall.
 
-If you want a second-stage app list, create `optional-apps.json` alongside `apps.json`. `apps.json` installs automatically during bootstrap, while `optional-apps.json` is offered with a yes/no prompt after first login and can also be installed later from a desktop shortcut.
+If you want a second-stage app list, create `optional-apps.json` alongside `apps.json`. Start from `optional-apps-template.json` if you want an example. `apps.json` installs automatically during bootstrap, while `optional-apps.json` is offered with a yes/no prompt after first login and can also be installed later from a desktop shortcut.
 
 ### Backup Before Reinstall
 
@@ -90,7 +90,7 @@ This backs up:
 
 ### 2. Edit Your App List
 
-Open `apps.json` and remove unwanted apps:
+Copy `apps-template.json` to `apps.json`, then remove unwanted apps:
 
 ```json
 {
@@ -126,7 +126,7 @@ winget import apps.json --accept-package-agreements --accept-source-agreements
 Optional apps can use the same manifest format:
 
 ```powershell
-Copy-Item apps.json optional-apps.json
+Copy-Item optional-apps-template.json optional-apps.json
 # Then edit optional-apps.json for apps you want to install later
 ```
 
@@ -176,8 +176,8 @@ declarative-windows/
 ├── CLAUDE.md              # Project guidance for Claude Code
 ├── brainstorm.md          # Design discussions
 │
-├── apps.json              # Auto-installed WinGet package list
-├── optional-apps.json     # Prompted/later WinGet package list (optional)
+├── apps-template.json     # Example auto-installed WinGet package list
+├── optional-apps-template.json # Example prompted/later WinGet package list
 ├── Sophia-Preset.ps1      # Custom Sophia Script configuration
 ├── autounattend.xml       # Windows unattended install config
 ├── bootstrap.ps1          # Main orchestration script

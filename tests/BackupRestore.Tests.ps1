@@ -20,6 +20,10 @@ Describe "backup and restore static checks" {
         $backupScriptContent | Should -Match "restorePath"
     }
 
+    It "backs up optional app manifest when present" {
+        $backupScriptContent | Should -Match "optional-apps\.json"
+    }
+
     It "restores in merge mode by default" {
         $restoreScriptContent | Should -Match 'Merge'
     }
