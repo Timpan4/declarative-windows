@@ -1,25 +1,30 @@
-# Sensitive files - DO NOT COMMIT
-# These files may contain passwords, personal data, or secrets
-*-personal.json                  # Personal configuration files
-config-personal/                 # Personal config directory
-config/backup.json               # Personal backup configuration
-config/restore.json              # Personal restore configuration
-manifests/                       # Backup manifests and reports
-backups/                         # Local backup artifacts
-*.manifest.json                  # Backup manifest files
-*.restore-report.json            # Restore report files
-*.backup-report.txt              # Human-readable backup reports
-*.machine.json                   # Machine-specific exports
+# Sensitive files - do not commit
+# These files may contain passwords, personal data, or machine-specific values.
+*-personal.json
+config-personal/
+config/backup.json
+config/restore.json
+apps.json
+optional-apps.json
+apps-export.json
 
-# Note: autounattend.xml IS committed (passwords left blank, Windows prompts during install)
+# Backup manifests and reports
+manifests/
+backups/
+*.manifest.json
+*.restore-report.json
+*.backup-report.txt
+*.machine.json
+
+# Note: autounattend.xml is committed as a template with blank secrets.
 
 # Build outputs
 build/
 output/
 dist/
-*.iso                            # Generated Windows ISOs
-*.wim                            # Windows image files
-*.esd                            # Windows image files
+*.iso
+*.wim
+*.esd
 
 # Temporary files
 temp/
@@ -30,7 +35,7 @@ install.log
 
 # Downloaded tools
 oscdimg.exe
-Sophia-Script/                   # Downloaded Sophia Script (download fresh each time)
+Sophia-Script/
 
 # System files
 Thumbs.db
@@ -41,8 +46,3 @@ desktop.ini
 *.bak
 *.backup
 *~
-
-# Personal apps list (keep template, not personal list)
-# Your personal app list - don't commit
-# Use apps-template.json instead for sharing
-apps.json

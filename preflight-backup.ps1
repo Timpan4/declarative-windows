@@ -247,6 +247,7 @@ function Get-RepoFilesToBackup {
 
     $files = @(
         "apps.json",
+        "optional-apps.json",
         "config\backup.json"
     )
 
