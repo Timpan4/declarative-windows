@@ -20,12 +20,10 @@ Describe "autounattend.xml static checks" {
         $fileContent | Should -Not -Match "<Key></Key>"
     }
 
-    It "sets execution policy for bootstrap" {
-        $fileContent | Should -Match "Set-ExecutionPolicy"
-    }
-
-    It "waits for network before bootstrap" {
-        $fileContent | Should -Match "Wait for Network Connectivity"
-        $fileContent | Should -Match "Network wait timed out"
+    It "keeps first logon commands minimal" {
+        $fileContent | Should -Match "Run Windows Setup Bootstrap Script"
+        $fileContent | Should -Not -Match "Set-ExecutionPolicy"
+        $fileContent | Should -Not -Match "Wait for Network Connectivity"
+        $fileContent | Should -Not -Match "Network wait timed out"
     }
 }

@@ -37,28 +37,29 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 
 ## ISO Contents
 
-The ISO generator injects files into the root and `$OEM$` structure:
+The ISO generator injects files into the root and `sources\$OEM$` structure:
 
 ```
 Custom-ISO:\
 ├── autounattend.xml
-└── $OEM$\
-    └── $1\
-        └── Setup\
-            ├── bootstrap.ps1
-            ├── apps.json
-            ├── optional-apps.json (optional)
-            ├── Sophia-Preset.ps1
-            ├── restore-backup.ps1
-            ├── apply-registry.ps1
-            └── config\
-                ├── backup.template.json
-                └── registry.json
+└── sources\
+    └── $OEM$\
+        └── $1\
+            └── Setup\
+                ├── bootstrap.ps1
+                ├── apps.json
+                ├── optional-apps.json (optional)
+                ├── Sophia-Preset.ps1
+                ├── restore-backup.ps1
+                ├── apply-registry.ps1
+                └── config\
+                    ├── backup.template.json
+                    └── registry.json
 ```
 
 ## On the Installed System
 
-During installation, you still choose the target disk and partition in Windows Setup. After Windows copies the `$OEM$` payload, the setup files land in `C:\Setup`.
+During installation, you still choose the target disk and partition in Windows Setup. After Windows copies the `sources\$OEM$` payload, the setup files land in `C:\Setup`.
 
 ```
 C:\Setup\
