@@ -1,27 +1,19 @@
 # AutoUnattend.xml Explained
 
-This file automates only the minimal parts of Windows 11 setup needed for this repo. It intentionally avoids aggressive install-time customization so Windows Setup stays as reliable as possible.
+This file is now intentionally ultra-minimal. It avoids changing Windows Setup itself and only kicks off post-install automation after first login.
 
 ## How It Works
 
 The file runs in three phases during Windows installation:
 
-### 1. windowsPE (Installation Phase)
-
-Runs while Windows is being installed to the disk.
-
-- Bypasses TPM/Secure Boot/RAM checks (helpful for VMs)
-- Leaves disk and partition selection to the user in Windows Setup
-- Configures language/locale to en-US
-
-### 2. oobeSystem (First Boot)
+### 1. oobeSystem (First Boot)
 
 Runs when Windows boots for the first time.
 
-- Hides EULA page
-- Hides OEM registration
-- Forces local account creation (no Microsoft account)
-- Sets privacy to minimal data collection
+- Leaves the Windows installer completely manual until OOBE is finished
+- Uses only a few standard OOBE settings (`ProtectYourPC`, `HideEULAPage`, wireless setup visibility)
+- Waits for network connectivity
+- Starts `bootstrap.ps1`
 
 **You'll still see:**
 - Region/language selection
@@ -31,17 +23,18 @@ Runs when Windows boots for the first time.
 
 ## What Happens on First Login
 
-1. Windows completes the normal account setup flow
-2. The system waits for network connectivity
-3. **bootstrap.ps1 runs automatically** via FirstLogonCommands
+1. Complete the normal Windows setup flow yourself
+2. Sign in for the first time
+3. The system waits for network connectivity
+4. **bootstrap.ps1 runs automatically** via FirstLogonCommands
 
-Install-time tweaking is intentionally minimal. Bootstrap handles app installation via WinGet and system customization via Sophia Script after first login.
+Everything else now happens in `bootstrap.ps1`: app installs, debloat, Sophia, restore shortcuts, and post-install tweaks.
 
 **If bootstrap fails or you want to re-run it:** Just run `C:\Setup\bootstrap.ps1` manually.
 
 ## Customization
 
-This file is intentionally minimal. If you add more install-time customization later, keep it small and retest Setup carefully.
+This file should stay minimal. If Windows Setup errors return, prefer moving more logic into `bootstrap.ps1` rather than adding it back here.
 
 ## Logs
 
