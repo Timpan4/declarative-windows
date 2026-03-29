@@ -134,7 +134,7 @@ function Validate-StagedIsoLayout {
         [bool]$HasOptionalApps
     )
 
-    $stagedSetupRoot = Join-Path $WorkRoot 'sources\`$OEM`$\`$1\Setup'
+    $stagedSetupRoot = Join-Path $WorkRoot 'sources\$OEM$\$1\Setup'
     $requiredStagedFiles = @(
         (Join-Path $WorkRoot 'autounattend.xml'),
         (Join-Path $stagedSetupRoot 'bootstrap.ps1'),
