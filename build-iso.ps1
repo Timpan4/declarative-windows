@@ -114,7 +114,7 @@ function Get-UnattendSetupFileReferences {
     $commandNodes = $document.SelectNodes('//u:FirstLogonCommands/u:SynchronousCommand/u:CommandLine', $namespaceManager)
 
     foreach ($commandNode in $commandNodes) {
-        foreach ($match in [regex]::Matches($commandNode.InnerText, '(?i)\bC:\\Setup\\[^\s"'"''"'";]+')) {
+        foreach ($match in [regex]::Matches($commandNode.InnerText, '(?i)\bC:\\Setup\\[^\s"'';]+')) {
             $references.Add($match.Value)
         }
     }
