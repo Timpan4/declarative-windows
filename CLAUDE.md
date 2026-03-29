@@ -89,7 +89,7 @@ declarative-windows/
 
 # 3. Boot from ISO - choose the target disk/partition, then setup continues with:
 #    - autounattend.xml configures Windows setup after disk selection
-#    - Files copied to C:\Setup via $OEM$ folder
+#    - Files copied to C:\Setup via sources\$OEM$ folder
 #    - bootstrap.ps1 runs automatically after first login
 #    - Desktop shortcut created for manual re-runs
 
@@ -101,13 +101,13 @@ declarative-windows/
 ```
 Custom-ISO:\
 ├── sources\              # Windows install files
-├── autounattend.xml      # Placed in root for auto-execution
-└── $OEM$\
-    └── $$\
-        └── Setup\        # Files copied to C:\Setup during install
-            ├── bootstrap.ps1
-            ├── apps.json
-            └── Sophia.ps1
+│   └── $OEM$\
+│       └── $$\
+│           └── Setup\    # Files copied to C:\Setup during install
+│               ├── bootstrap.ps1
+│               ├── apps.json
+│               └── Sophia.ps1
+└── autounattend.xml      # Placed in root for auto-execution
 ```
 
 **On installed system:**
@@ -132,7 +132,7 @@ If you don't want to generate a custom ISO, manually create USB structure:
 
 ```bash
 # 1. Create Windows install USB with Rufus/Media Creation Tool
-# 2. Copy files to USB in $OEM$ structure (see above)
+# 2. Copy files to USB in sources\$OEM$ structure (see above)
 # 3. Copy autounattend.xml to USB root
 # 4. Boot from USB
 ```

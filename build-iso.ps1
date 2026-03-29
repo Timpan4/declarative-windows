@@ -7,7 +7,7 @@
 .DESCRIPTION
     This script takes a source Windows 11 ISO and creates a customized version with:
     - autounattend.xml for unattended installation
-    - bootstrap.ps1, apps.json, optional-apps.json, and Sophia-Preset.ps1 copied via $OEM$ structure when present
+    - bootstrap.ps1, apps.json, optional-apps.json, and Sophia-Preset.ps1 copied via sources\$OEM$ structure when present
     - Fully automated setup that runs on first login
 
 .PARAMETER SourceISO
@@ -42,7 +42,7 @@ param(
     [string]$SourceIsoHash,
 
     [Parameter(Mandatory = $false)]
-    [string]$IsoLabel = "DECLARATIVE_WIN11",
+    [string]$IsoLabel,
 
     [Parameter(Mandatory = $false)]
     [string]$OscdimgDownloadUrl,
@@ -98,6 +98,75 @@ function Validate-SourceIsoHash {
     }
 
     Write-Success "Source ISO checksum verified"
+}
+
+function Get-UnattendSetupFileReferences {
+    param(
+        [Parameter(Mandatory)]
+        [string]$UnattendPath
+    )
+
+    $document = [xml](Get-Content -Path $UnattendPath -Raw)
+    $namespaceManager = [System.Xml.XmlNamespaceManager]::new($document.NameTable)
+    [void]$namespaceManager.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+
+    $references = [System.Collections.Generic.List[string]]::new()
+    $commandNodes = $document.SelectNodes('//u:FirstLogonCommands/u:SynchronousCommand/u:CommandLine', $namespaceManager)
+
+    foreach ($commandNode in $commandNodes) {
+        foreach ($match in [regex]::Matches($commandNode.InnerText, '(?i)\bC:\\Setup\\[^\s"'"''"'";]+')) {
+            $references.Add($match.Value)
+        }
+    }
+
+    return $references | Sort-Object -Unique
+}
+
+function Validate-StagedIsoLayout {
+    param(
+        [Parameter(Mandatory)]
+        [string]$WorkRoot,
+
+        [Parameter(Mandatory)]
+        [string]$UnattendPath,
+
+        [Parameter(Mandatory)]
+        [bool]$HasOptionalApps
+    )
+
+    $stagedSetupRoot = Join-Path $WorkRoot 'sources\`$OEM`$\`$1\Setup'
+    $requiredStagedFiles = @(
+        (Join-Path $WorkRoot 'autounattend.xml'),
+        (Join-Path $stagedSetupRoot 'bootstrap.ps1'),
+        (Join-Path $stagedSetupRoot 'apps.json'),
+        (Join-Path $stagedSetupRoot 'Sophia-Preset.ps1'),
+        (Join-Path $stagedSetupRoot 'restore-backup.ps1'),
+        (Join-Path $stagedSetupRoot 'apply-registry.ps1'),
+        (Join-Path $stagedSetupRoot 'config\registry.json'),
+        (Join-Path $stagedSetupRoot 'config\backup.template.json')
+    )
+
+    if ($HasOptionalApps) {
+        $requiredStagedFiles += Join-Path $stagedSetupRoot 'optional-apps.json'
+    }
+
+    foreach ($stagedFile in $requiredStagedFiles) {
+        if (-not (Test-Path $stagedFile -PathType Leaf)) {
+            throw "Staged ISO is missing required file: $stagedFile"
+        }
+    }
+
+    # Proven build-time check: every C:\Setup reference in unattend must resolve to the staged $OEM$ payload.
+    foreach ($setupReference in (Get-UnattendSetupFileReferences -UnattendPath $UnattendPath)) {
+        $relativePath = $setupReference.Substring('C:\Setup\'.Length)
+        $stagedReference = Join-Path $stagedSetupRoot $relativePath
+
+        if (-not (Test-Path $stagedReference -PathType Leaf)) {
+            throw "autounattend.xml references $setupReference, but staged ISO is missing $stagedReference"
+        }
+    }
+
+    Write-Success 'Staged ISO layout validation passed'
 }
 
 # Function to find oscdimg.exe from Windows ADK
@@ -254,6 +323,21 @@ try {
 
     Write-Success "ISO mounted at: $sourceRoot"
 
+    # Capture the original ISO volume label for oscdimg
+    if (-not $IsoLabel) {
+        $IsoLabel = (Get-Volume -DriveLetter $driveLetter).FileSystemLabel
+        if ($IsoLabel) {
+            Write-Success "Captured original ISO label: $IsoLabel"
+        }
+        else {
+            $IsoLabel = "CCCOMA_X64FRE_EN-US_DV9"
+            Write-Info "Could not read original label, using default: $IsoLabel"
+        }
+    }
+    else {
+        Write-Info "Using user-provided ISO label: $IsoLabel"
+    }
+
     # Copy ISO contents to working directory
     Write-Step "Copying ISO contents (this may take a few minutes)"
     Write-Info "Destination: $WorkDir"
@@ -271,14 +355,14 @@ try {
     Copy-Item -Path $requiredFiles["autounattend.xml"] -Destination $WorkDir -Force
     Write-Success "autounattend.xml copied to ISO root"
 
-    # Create $OEM$ folder structure
+    # Create sources\$OEM$ folder structure
     Write-Step "Creating `$OEM`$ folder structure"
-    $oemPath = Join-Path $WorkDir "`$OEM`$"
+    $oemPath = Join-Path (Join-Path $WorkDir "sources") "`$OEM`$"
     $setupPath = Join-Path $oemPath "`$1\Setup"
     New-Item -Path $setupPath -ItemType Directory -Force | Out-Null
-    Write-Success "`$OEM`$\`$1\Setup folder created"
+    Write-Success "sources\`$OEM`$\`$1\Setup folder created"
 
-    # Copy setup files to $OEM$\$1\Setup
+    # Copy setup files to sources\$OEM$\$1\Setup
     Write-Step "Copying setup files to `$OEM`$\`$1\Setup"
 
     $filesToCopy = @(
@@ -306,18 +390,27 @@ try {
     Copy-Item -Path $configSource -Destination $configDestination -Recurse -Force
     Write-Success "config folder copied"
 
+    # Fail the build here if the staged tree does not match the paths unattend will use later.
+    Write-Step "Validating staged ISO layout"
+    Validate-StagedIsoLayout -WorkRoot $WorkDir -UnattendPath (Join-Path $WorkDir "autounattend.xml") -HasOptionalApps (Test-Path $optionalFiles["optional-apps.json"])
+
     # Build the ISO
     Write-Step "Building custom ISO with oscdimg"
     Write-Info "This may take several minutes..."
 
     $bootImage = Join-Path $WorkDir "boot\etfsboot.com"
-    $efiBootImage = Join-Path $WorkDir "efi\microsoft\boot\efisys.bin"
+    $efiBootImage = Join-Path $WorkDir "efi\microsoft\boot\efisys_noprompt.bin"
 
     if (-not (Test-Path $bootImage)) {
         throw "BIOS boot image not found: $bootImage"
     }
     if (-not (Test-Path $efiBootImage)) {
-        throw "UEFI boot image not found: $efiBootImage"
+        # Fall back to efisys.bin if noprompt variant is missing
+        $efiBootImage = Join-Path $WorkDir "efi\microsoft\boot\efisys.bin"
+        if (-not (Test-Path $efiBootImage)) {
+            throw "UEFI boot image not found. Neither efisys_noprompt.bin nor efisys.bin exist."
+        }
+        Write-Info "efisys_noprompt.bin not found, falling back to efisys.bin"
     }
 
     # Resolve output path
