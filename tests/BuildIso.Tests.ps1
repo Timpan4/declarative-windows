@@ -49,8 +49,11 @@ Describe "build-iso.ps1 static checks" {
     }
 
     It "checks unattend C:\\Setup references against the staged OEM payload" {
+        $stagedPathPattern = [regex]::Escape('Join-Path $WorkRoot ''sources\$OEM$\$1\Setup''')
+
         $scriptContent | Should -Match "Get-UnattendSetupFileReferences"
         $scriptContent | Should -Match "C:\\Setup\\"
+        $scriptContent | Should -Match $stagedPathPattern
         $scriptContent | Should -Match "autounattend\.xml references .* staged ISO is missing"
     }
 
