@@ -128,6 +128,20 @@ function Normalize-RuleId {
     return $normalized.Trim('-').ToLowerInvariant()
 }
 
+function Get-RelativePath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$BasePath
+    )
+    $pathUri = New-Object System.Uri($Path)
+    $baseUri = New-Object System.Uri($BasePath)
+    $relativeUri = $baseUri.MakeRelativeUri($pathUri)
+    $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+    return $relativePath -replace '/', '\'
+}
+
 function Get-BackupRules {
     param([object]$Config)
 
@@ -339,7 +353,7 @@ foreach ($rule in $rules) {
         restorePath = $rule.restorePath
         kind = $rule.kind
         tags = $rule.tags
-        backupPath = $ruleDestination
+        backupPath = Get-RelativePath -Path $ruleDestination -BasePath $sessionRoot
         success = $copyResult.Success
         message = $copyResult.Message
     })
@@ -371,7 +385,7 @@ foreach ($repoFile in $repoFiles) {
     $entry = [ordered]@{
         relativePath = $repoFile.relativePath
         source = $repoFile.source
-        backupPath = $destination
+        backupPath = Get-RelativePath -Path $destination -BasePath $sessionRoot
     }
 
     if ($VerifyHashes -and (Test-Path $destination)) {

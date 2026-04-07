@@ -498,17 +498,63 @@ function Invoke-WingetManifestInstall {
                 Write-Log "$ManifestLabel changed since last WinGet run" -Level INFO
             }
 
-            $tempAppsJson = Join-Path $env:TEMP "apps-missing-$(Get-Random).json"
-            Write-FilteredAppsJson -AppsData $appsData -PackageIds $missingPackages -OutputPath $tempAppsJson
-
             Write-Log "Installing $($missingPackages.Count) missing packages from $ManifestLabel" -Level INFO
-            $null = winget import $tempAppsJson --accept-package-agreements --accept-source-agreements 2>&1
 
-            $stillMissing = foreach ($packageId in $missingPackages) {
-                if (-not (Test-WingetPackageInstalled -PackageId $packageId)) {
-                    $packageId
+            $failedPackages = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($packageId in $missingPackages) {
+                $installed = $false
+                $scopesToTry = @('user', 'machine')
+
+                foreach ($scope in $scopesToTry) {
+                    Write-Log "  Installing $packageId (scope: $scope)..." -Level INFO
+
+                    $stdoutFile = Join-Path $env:TEMP "winget-stdout-$packageId-$(Get-Random).log"
+                    $stderrFile = Join-Path $env:TEMP "winget-stderr-$packageId-$(Get-Random).log"
+
+                    $proc = Start-Process -FilePath "winget" -ArgumentList "install", $packageId, "--accept-package-agreements", "--accept-source-agreements", "--scope", $scope -NoNewWindow -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+                    $proc.WaitForExit()
+
+                    # Stream stdout in real-time
+                    if (Test-Path $stdoutFile) {
+                        Get-Content $stdoutFile | ForEach-Object {
+                            Write-Log "    $_" -Level INFO
+                        }
+                    }
+
+                    # Stream stderr as warnings
+                    if (Test-Path $stderrFile) {
+                        $stderrContent = Get-Content $stderrFile -Raw
+                        if ($stderrContent -and $stderrContent.Trim()) {
+                            Get-Content $stderrFile | ForEach-Object {
+                                Write-Log "    $_" -Level WARNING
+                            }
+                        }
+                    }
+
+                    # Clean up temp output files
+                    if (Test-Path $stdoutFile) { Remove-Item $stdoutFile -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $stderrFile) { Remove-Item $stderrFile -Force -ErrorAction SilentlyContinue }
+
+                    # Check if installed
+                    if (Test-WingetPackageInstalled -PackageId $packageId) {
+                        Write-Log "  Successfully installed $packageId (scope: $scope)" -Level SUCCESS
+                        $installed = $true
+                        break
+                    }
+
+                    if ($scope -eq 'user') {
+                        Write-Log "  User scope failed for $packageId, trying machine scope..." -Level WARNING
+                    }
+                }
+
+                if (-not $installed) {
+                    $failedPackages.Add($packageId)
+                    Write-Log "WARNING: $packageId failed to install (both user and machine scopes failed)" -Level WARNING
                 }
             }
+
+            $stillMissing = $failedPackages
 
             foreach ($packageId in $stillMissing) {
                 Add-FailedItem -Category $SummaryStep -Item $packageId -Reason "Not installed after import from $ManifestLabel"
@@ -530,12 +576,13 @@ function Invoke-WingetManifestInstall {
             return $false
         }
         catch {
-            Write-Log "ERROR during WinGet import from ${ManifestLabel}: $($_.Exception.Message)" -Level ERROR
-            Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "WinGet import failed"
-            Set-StepState -StepId $StepId -Status "failed" -Message "WinGet import failed"
+            Write-Log "ERROR during WinGet install from ${ManifestLabel}: $($_.Exception.Message)" -Level ERROR
+            Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "WinGet install failed"
+            Set-StepState -StepId $StepId -Status "failed" -Message "WinGet install failed"
             return $false
         }
         finally {
+            # Legacy single-file cleanup (kept for safety if old path is referenced)
             if ($tempAppsJson -and (Test-Path $tempAppsJson)) {
                 Remove-Item -Path $tempAppsJson -Force -ErrorAction SilentlyContinue
             }

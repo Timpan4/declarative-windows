@@ -2,7 +2,7 @@
 
 > **Goal:** Enable quick Windows reinstallation every 2 months without manual reconfiguration
 >
-> **Last Updated:** 2025-10-02
+> **Last Updated:** 2026-04-08
 >
 > **Note:** Research tasks have been moved to [RESEARCH.md](RESEARCH.md)
 
@@ -37,7 +37,7 @@
 
 ### Implementation Tasks
 
-- [ ] 🔴 🛠️ Download Sophia Script and add to repository
+- [x] 🔴 🛠️ Download Sophia Script and add to repository (implemented as auto-download at runtime via Get-SophiaScript in bootstrap.ps1)
 - [x] 🔴 🛠️ Create customized `Sophia.ps1` preset file
 - [x] 🟡 🛠️ Document which Sophia options are enabled/disabled
 - [x] 🟡 🛠️ Analyze overlap between AutoUnattend.xml and Sophia Script
@@ -56,7 +56,7 @@
 - [x] 🔴 🛠️ Create/obtain base autounattend.xml file
 - [x] 🔴 🛠️ Add FirstLogonCommands to execute bootstrap.ps1
 - [x] 🟡 🛠️ Configure execution policy bypass in FirstLogonCommands
-- [ ] 🟡 🛠️ Add network wait logic before running bootstrap
+- [x] 🟡 🛠️ Add network wait logic before running bootstrap (implemented in bootstrap.ps1 via Wait-ForNetwork)
 
 ---
 
@@ -82,7 +82,7 @@
 - [ ] 🔴 🛠️ Add local mode flag (run from repo dir, not C:\Setup)
 - [ ] 🔴 🛠️ Add system restore point creation before changes
 - [ ] 🔴 🛠️ Add bloat removal path for existing installs (Appx + features)
-- [ ] 🔴 🛠️ Auto-download Sophia Script when missing (version-pinned)
+- [x] 🔴 🛠️ Auto-download Sophia Script when missing (version-pinned) — implemented via Get-SophiaScript in bootstrap.ps1
 - [ ] 🟡 🛠️ Add safety prompt for destructive steps (with -Force override)
 - [ ] 🟡 🛠️ Add local-mode logging path (same format as C:\Setup)
 - [ ] 🟢 🛠️ Add local-mode desktop shortcut/summary (optional)
@@ -115,7 +115,7 @@
 - [ ] 🟡 🛠️ Create `config/registry.json` structure and schema
 - [ ] 🟡 🛠️ Create `config/features.json` for Windows features toggles
 - [ ] 🟡 🛠️ Create `config/settings.json` for miscellaneous OS settings
-- [ ] 🟢 🛠️ Create PowerShell scripts to apply each config file type
+- [x] 🟢 🛠️ Create PowerShell scripts to apply each config file type
 - [ ] 🟢 🛠️ Integrate config file application into bootstrap.ps1
 
 ---
@@ -127,7 +127,7 @@
 ### Implementation Tasks
 
 - [x] 🔴 🛠️ Create `build-iso.ps1` script for automated ISO generation
-- [ ] 🔴 🛠️ Add oscdimg.exe downloader (from Windows ADK)
+- [ ] 🔴 🛠️ Add oscdimg.exe downloader (from Windows ADK) — Find-OscdImg has download logic but no default URL
 - [x] 🔴 🛠️ Implement ISO extraction logic
 - [x] 🔴 🛠️ Implement $OEM$ folder structure creation
 - [x] 🔴 🛠️ Implement file injection (autounattend.xml, bootstrap.ps1, apps.json, Sophia.ps1)
@@ -185,7 +185,7 @@
 - [x] 🔴 📝 Add Security Warning section to README
 - [ ] 🔴 📝 Document how to use build-iso.ps1 (prerequisites, usage, outputs)
 - [x] 🟡 📝 Document how to customize Sophia.ps1 preset
-- [ ] 🟡 📝 Create docs/ISO-GENERATION.md with detailed ISO creation guide
+- [x] 🟡 📝 Create docs/ISO-GENERATION.md with detailed ISO creation guide
 - [ ] 🟡 📝 Document $OEM$ folder structure
 - [ ] 🟡 📝 Document bootstrap.ps1 log format and location
 - [ ] 🟡 📝 Document manual re-run process (desktop shortcut)
@@ -294,6 +294,93 @@
 
 ---
 
+# Phase 4: Infrastructure Improvements
+
+> Structural improvements to enable better testing, modularity, and robustness. These gate all later work.
+
+## Component: Module Refactor (bootstrap.ps1)
+
+> Refactor the ~1300-line monolithic bootstrap.ps1 into reusable PowerShell modules.
+
+### Implementation Tasks
+
+- [ ] 🔴 🛠️ Create `modules/DeclarativeWindows.psm1` root module with common utilities
+- [ ] 🔴 🛠️ Extract `Invoke-WinGetInstall` into `modules/WinGet.psm1` (idempotent package install)
+- [ ] 🔴 🛠️ Extract `Invoke-SophiaSetup` into `modules/Sophia.psm1` (OS tweaks via Sophia Script)
+- [ ] 🔴 🛠️ Extract `Set-DesktopShortcuts` into `modules/Shortcuts.psm1` (lnk creation)
+- [ ] 🔴 🛠️ Extract backup/restore logic into `modules/Backup.psm1`
+- [ ] 🔴 🛠️ Extract state management into `modules/State.psm1` (Initialize-State, Save-State, Should-RunStep)
+- [ ] 🔴 🛠️ Extract registry/application into `modules/Registry.psm1` (PostInstallTweaks, debloat)
+- [ ] 🔴 🛠️ Refactor bootstrap.ps1 to import modules and orchestrate (target: <400 lines)
+- [ ] 🟡 🛠️ Add module manifest `modules/DeclarativeWindows.psd1`
+- [ ] 🟡 🛠️ Add `-WhatIf` support using PowerShell's `SupportsShouldProcess`
+- [ ] 🟢 🛠️ Add `--version` flag to bootstrap.ps1 that prints git commit hash
+
+---
+
+## Component: Functional Tests
+
+> Expand Pester tests beyond static string checks to actual behavioral testing with mocking.
+
+### Testing Tasks
+
+- [ ] 🔴 ✅ Add Pester tests for `Find-OscdImg` (mock ADK registry/path, test download fallback)
+- [ ] 🔴 ✅ Add Pester tests for `Validate-StagedIsoLayout` with mocked file tree
+- [ ] 🔴 ✅ Add Pester tests for `Get-UnattendSetupFileReferences` (parse sample XML)
+- [ ] 🔴 ✅ Add Pester tests for bootstrap.ps1 idempotency (run twice, verify state)
+- [ ] 🔴 ✅ Add Pester tests for DryRun mode (verify no system changes)
+- [ ] 🔴 ✅ Add Pester tests for state management (Initialize-State, Should-RunStep)
+- [ ] 🟡 ✅ Add Pester tests for `Invoke-WinGetInstall` with mocked `winget list`
+- [ ] 🟡 ✅ Add Pester tests for `Set-DesktopShortcuts` with mocked WScript.Shell
+- [ ] 🟢 ✅ Convert existing static tests in BuildIso.Tests.ps1 to functional equivalents
+
+---
+
+## Component: Config File Completion
+
+> Expand stub config files and their apply scripts.
+
+### Implementation Tasks
+
+- [ ] 🟡 🛠️ Populate `config/registry.json` with 10+ commonly-requested registry tweaks
+- [ ] 🟡 🛠️ Populate `config/features.json` with Windows features (WSL, SSH, Hyper-V, etc.)
+- [ ] 🟡 🛠️ Populate `config/settings.json` with miscellaneous OS settings
+- [ ] 🟡 🛠️ Enhance `apply-registry.ps1` to read and apply `config/registry.json`
+- [ ] 🟡 🛠️ Create `apply-features.ps1` to enable/disable Windows features from `config/features.json`
+- [ ] 🟡 🛠️ Create `apply-settings.ps1` to apply miscellaneous settings from `config/settings.json`
+- [ ] 🟢 🛠️ Add JSON schema for each config file type with validation in apply scripts
+
+---
+
+## Component: oscdimg.exe Auto-Downloader
+
+> Complete the auto-downloader in build-iso.ps1 so ADK installation is not required.
+
+### Implementation Tasks
+
+- [ ] 🔴 🛠️ Find reliable source URL for oscdimg.exe (ADK install media or known mirror)
+- [ ] 🔴 🛠️ Implement auto-download in `Find-OscdImg` with SHA256 verification
+- [ ] 🔴 🛠️ Cache downloaded oscdimg.exe to `$env:LOCALAPPDATA\declarative-windows\tools`
+- [ ] 🟡 🛠️ Add `Find-OscdImg` tests with mocked downloads
+
+---
+
+## Component: JSON Schema Validation
+
+> Fail fast on invalid config files before any system changes.
+
+### Implementation Tasks
+
+- [ ] 🟡 🛠️ Download/add WinGet packages.schema.json to `schemas/`
+- [ ] 🟡 🛠️ Download Microsoft Unattend.xsd to `schemas/`
+- [ ] 🟡 🛠️ Add `Test-AppsJsonSchema` function to validate apps.json against schema
+- [ ] 🟡 🛠️ Add `Test-UnattendXmlSchema` function to validate autounattend.xml against XSD
+- [ ] 🟡 🛠️ Call schema validation in bootstrap.ps1 before any install operations
+- [ ] 🟡 🛠️ Call schema validation in build-iso.ps1 before ISO build
+- [ ] 🟢 🛠️ Add Pester tests for schema validation (valid file passes, invalid fails with descriptive error)
+
+---
+
 # Backlog / Future Ideas
 
 > **Research:** See [RESEARCH.md - Backlog](RESEARCH.md#backlog--future-research) for future investigation tasks
@@ -317,9 +404,27 @@
 
 ---
 
+## Implementation Dependency Order
+
+```
+Phase 4: Module Refactor ──▶ Functional Tests
+       │                          │
+       ▼                          ▼
+Config Completion ◀────────── (parallel)
+       │
+       ▼
+oscdimg Auto-Downloader ──┬──▶ JSON Schema Validation
+                          │          │
+                          ▼          ▼
+                    (Phase 2 tasks unlock after Phase 4)
+```
+
+---
+
 **Notes:**
 
-- Prioritize Phase 1 MVP tasks to get a working prototype
+- Phase 1 MVP tasks remain the primary goal — don't deprioritize them for infrastructure work
+- Phase 4 infrastructure gates Phase 2/3 — do these first to unlock later work
 - Test frequently in VM to avoid breaking personal system
 - Backup current system before testing destructive changes
-- Keep security in mind - never commit passwords/tokens to Git
+- Keep security in mind — never commit passwords/tokens to Git

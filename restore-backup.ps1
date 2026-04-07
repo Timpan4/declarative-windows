@@ -47,15 +47,62 @@ function Find-BackupManifest {
 function Resolve-RestoreTargetPath {
     param(
         [string]$Path,
-        [string]$ProfileRoot
+        [string]$ProfileRoot,
+        [string]$OriginalOsDrive,
+        [hashtable]$RestoreTargetMap
     )
 
     $expandedPath = [Environment]::ExpandEnvironmentVariables($Path)
+
+    # Profile remapping takes priority
     if ($DestinationProfileRoot) {
         $currentProfile = [Environment]::ExpandEnvironmentVariables("%USERPROFILE%")
         if ($expandedPath.StartsWith($currentProfile, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $relativePath = $expandedPath.Substring($currentProfile.Length).TrimStart('\\')
+            $relativePath = $expandedPath.Substring($currentProfile.Length).TrimStart('\')
             return Join-Path $ProfileRoot $relativePath
+        }
+    }
+
+    # OS drive remapping
+    if ($OriginalOsDrive -and $env:SystemDrive -ne $OriginalOsDrive) {
+        $osDriveSlash = $OriginalOsDrive + "\"
+        if ($expandedPath.StartsWith($osDriveSlash, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $currentOsDriveSlash = $env:SystemDrive + "\"
+            $relativePath = $expandedPath.Substring($OriginalOsDrive.Length)
+            $newPath = $currentOsDriveSlash + $relativePath.TrimStart('\')
+            # Check restore target map for remapping
+            foreach ($key in $RestoreTargetMap.Keys) {
+                if ($newPath -and $RestoreTargetMap[$key]) {
+                    $mapKeySlash = $key + "\"
+                    $mapValueSlash = $RestoreTargetMap[$key] + "\"
+                    if ($newPath.StartsWith($mapKeySlash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        return $newPath.Replace($mapKeySlash, $mapValueSlash)
+                    }
+                }
+            }
+            return $newPath
+        }
+    }
+
+    # Check restore target map for other remappings
+    if ($RestoreTargetMap -and $RestoreTargetMap.Count -gt 0) {
+        foreach ($key in $RestoreTargetMap.Keys) {
+            if ($key -and $RestoreTargetMap[$key]) {
+                $keySlash = $key + "\"
+                if ($expandedPath.StartsWith($keySlash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $valueSlash = $RestoreTargetMap[$key] + "\"
+                    return $expandedPath.Replace($keySlash, $valueSlash)
+                }
+            }
+        }
+    }
+
+    # Warn if absolute path with drive letter cannot be remapped
+    if ($expandedPath -match '^[A-Za-z]:\\') {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "Warning: Absolute path '$expandedPath' cannot be remapped - returning as-is"
+        } else {
+            Write-Warning "Absolute path '$expandedPath' cannot be remapped - returning as-is"
         }
     }
 
@@ -115,6 +162,7 @@ if (-not $ManifestPath) {
 }
 
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
+$manifestDir = Split-Path $resolvedManifestPath -Parent
 $manifest = Get-Content -Path $resolvedManifestPath -Raw | ConvertFrom-Json
 
 if (-not $DestinationProfileRoot) {
@@ -122,6 +170,22 @@ if (-not $DestinationProfileRoot) {
 }
 
 $restoreReport = New-Object System.Collections.Generic.List[object]
+
+# Check if backup.json is in the repo files list
+$backupJsonEntry = $manifest.repoFiles | Where-Object { $_.relativePath -eq "config\backup.json" }
+if ($backupJsonEntry) {
+    $restoreBackupJson = $false
+    if ($PSCmdlet.ShouldProcess("config\backup.json", "Prompt for restore")) {
+        $response = Read-Host "Restore config\backup.json? This file contains paths from your OLD machine. It is recommended to customize from backup.template.json on the new machine instead. [Y] Restore, [N] Skip (default: N)"
+        $restoreBackupJson = $response -eq 'Y'
+    }
+
+    if (-not $restoreBackupJson) {
+        Write-Host "Skipping config\backup.json restore — customize from backup.template.json on the new machine"
+        # Remove from list so it's not processed in the loop below
+        $manifest.repoFiles = [array]($manifest.repoFiles | Where-Object { $_.relativePath -ne "config\backup.json" })
+    }
+}
 
 foreach ($repoFile in $manifest.repoFiles) {
     $repoTargetRoot = [Environment]::ExpandEnvironmentVariables($manifest.repo.restorePath)
@@ -140,10 +204,20 @@ foreach ($repoFile in $manifest.repoFiles) {
     }
 
     if ($PSCmdlet.ShouldProcess($destination, "Restore repo file")) {
-        Copy-Item -Path $repoFile.backupPath -Destination $destination -Force:($Mode -eq "Overwrite")
+        $sourcePath = Join-Path $manifestDir $repoFile.backupPath
+        Copy-Item -Path $sourcePath -Destination $destination -Force:($Mode -eq "Overwrite")
     }
 
     $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
+}
+
+# Build restore target map from manifest
+$originalOsDrive = $manifest.machine.osDrive
+$restoreTargetMap = @{}
+if ($manifest.restoreTargets) {
+    foreach ($prop in $manifest.restoreTargets.PSObject.Properties) {
+        $restoreTargetMap[$prop.Name] = $prop.Value
+    }
 }
 
 foreach ($rule in $manifest.rules) {
@@ -155,8 +229,9 @@ foreach ($rule in $manifest.rules) {
         continue
     }
 
-    $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot
-    $success = Copy-Tree -Source $rule.backupPath -Destination $targetPath -RobocopyMode $Mode
+    $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap
+    $sourcePath = Join-Path $manifestDir $rule.backupPath
+    $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
     $restoreReport.Add([pscustomobject]@{
         type = "content"
         path = $targetPath
