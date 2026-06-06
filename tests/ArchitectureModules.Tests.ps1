@@ -49,4 +49,11 @@ Describe "architecture module checks" {
         $modules.DeclarativeConfig | Should -Match "function Invoke-DeclarativeConfig"
         $modules.DeclarativeConfig | Should -Match "ValidateSet\(\""Registry\""\)"
     }
+
+    It "preserves requested registry value kinds in declarative config" {
+        $modules.DeclarativeConfig | Should -Match "GetValueKind"
+        $modules.DeclarativeConfig | Should -Match "New-ItemProperty"
+        $modules.DeclarativeConfig | Should -Match '-PropertyType \$valueType'
+        $modules.DeclarativeConfig | Should -Not -Match 'Set-ItemProperty[^\r\n]+-Type'
+    }
 }
