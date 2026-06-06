@@ -149,10 +149,10 @@ function New-BackupManifest {
         [Parameter(Mandatory)][object]$Repo,
         [Parameter(Mandatory)][object]$Backup,
         [Parameter(Mandatory)][object]$Config,
-        [Parameter(Mandatory)][object[]]$Rules,
-        [Parameter(Mandatory)][object[]]$RepoFiles,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Rules,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$RepoFiles,
         [Parameter(Mandatory)][object]$Exports,
-        [Parameter(Mandatory)][object[]]$Failures
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Failures
     )
 
     return [ordered]@{
