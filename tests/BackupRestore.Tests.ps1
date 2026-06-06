@@ -75,4 +75,22 @@ Describe "backup and restore static checks" {
         $backupManifestModuleContent | Should -Match 'function Resolve-BackupSourcePath'
         $backupManifestModuleContent | Should -Match 'function Resolve-RestoreTargetPath'
     }
+
+    It "allows successful backup manifests with empty optional collections" {
+        . $backupManifestModulePath
+
+        $manifest = New-BackupManifest `
+            -Machine ([ordered]@{ computerName = "test"; userProfile = "C:\Users\test"; osDrive = "C:" }) `
+            -Repo ([ordered]@{ remoteUrl = $null; name = "declarative-windows"; restorePath = "C:\Users\test\Documents\declarative-windows" }) `
+            -Backup ([ordered]@{ backupRoot = "E:\backup" }) `
+            -Config ([ordered]@{ sourcePath = "config\backup.template.json"; templateFallbackUsed = $true }) `
+            -Rules @() `
+            -RepoFiles @() `
+            -Exports ([ordered]@{ wingetPath = $null }) `
+            -Failures @()
+
+        $manifest.rules | Should -BeNullOrEmpty
+        $manifest.repoFiles | Should -BeNullOrEmpty
+        $manifest.failures | Should -BeNullOrEmpty
+    }
 }
