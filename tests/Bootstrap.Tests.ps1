@@ -170,9 +170,11 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match '\$unverifiedCount'
     }
 
-    It "sets registry values without passing an invalid Type parameter to Set-ItemProperty" {
+    It "sets registry values with the requested registry value kind" {
         $scriptContent | Should -Match "function Set-RegistryValueSafe"
         $scriptContent | Should -Match '\[int\]\$Value'
+        $scriptContent | Should -Match 'New-ItemProperty'
+        $scriptContent | Should -Match '-PropertyType \$propertyType'
         $scriptContent | Should -Not -Match 'Set-ItemProperty[^\r\n]+-Type'
     }
 }

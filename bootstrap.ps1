@@ -993,12 +993,19 @@ function Set-RegistryValueSafe {
 
     if ($Type -eq "DWord") {
         $typedValue = [int]$Value
+        $propertyType = "DWord"
     }
     else {
         $typedValue = [string]$Value
+        $propertyType = "String"
     }
 
-    Set-ItemProperty -Path $Path -Name $Name -Value $typedValue -Force
+    if ($Name -eq "(Default)") {
+        Set-Item -Path $Path -Value $typedValue -Force
+        return
+    }
+
+    New-ItemProperty -Path $Path -Name $Name -Value $typedValue -PropertyType $propertyType -Force | Out-Null
 }
 
 function Remove-ProvisionedAppIfPresent {
