@@ -169,6 +169,12 @@ function Validate-StagedIsoLayout {
     Write-Success 'Staged ISO layout validation passed'
 }
 
+$ModuleRoot = Join-Path $ScriptRoot "modules"
+$StagedSetupPayloadModule = Join-Path $ModuleRoot "StagedSetupPayload.ps1"
+if (Test-Path $StagedSetupPayloadModule) {
+    . $StagedSetupPayloadModule
+}
+
 # Function to find oscdimg.exe from Windows ADK
 function Find-OscdImg {
     param([string]$DownloadUrl)
@@ -273,6 +279,10 @@ try {
         "backup.template.json" = Join-Path $ScriptRoot "config\backup.template.json"
     }
 
+    $requiredDirectories = @{
+        "modules" = Join-Path $ScriptRoot "modules"
+    }
+
     $optionalFiles = @{
         "optional-apps.json" = Join-Path $ScriptRoot "optional-apps.json"
     }
@@ -284,6 +294,16 @@ try {
         else {
             Write-ErrorMessage "$($file.Key) not found at: $($file.Value)"
             throw "Missing required file: $($file.Key)"
+        }
+    }
+
+    foreach ($directory in $requiredDirectories.GetEnumerator()) {
+        if (Test-Path $directory.Value -PathType Container) {
+            Write-Success "$($directory.Key) found"
+        }
+        else {
+            Write-ErrorMessage "$($directory.Key) not found at: $($directory.Value)"
+            throw "Missing required directory: $($directory.Key)"
         }
     }
 
@@ -377,6 +397,9 @@ try {
         Copy-Item -Path $file.Path -Destination $setupPath -Force
         Write-Success "$($file.Name) copied"
     }
+
+    Copy-Item -Path $requiredDirectories["modules"] -Destination (Join-Path $setupPath "modules") -Recurse -Force
+    Write-Success "modules folder copied"
 
     if (Test-Path $optionalFiles["optional-apps.json"]) {
         Copy-Item -Path $optionalFiles["optional-apps.json"] -Destination $setupPath -Force

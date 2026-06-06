@@ -11,6 +11,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$ModuleRoot = Join-Path $PSScriptRoot "modules"
+$DeclarativeConfigModule = Join-Path $ModuleRoot "DeclarativeConfig.ps1"
+if (Test-Path $DeclarativeConfigModule) {
+    . $DeclarativeConfigModule
+}
+
 function Normalize-RegistryPath {
     param([string]$Path)
 
@@ -35,72 +41,8 @@ function Convert-RegistryType {
     }
 }
 
-$config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
-$entries = $config.entries
-
-if (-not $entries) {
-    return [pscustomobject]@{
-        Applied = 0
-        Skipped = 0
-        Failed = 0
-    }
+if (Get-Command Invoke-DeclarativeConfig -ErrorAction SilentlyContinue) {
+    return Invoke-DeclarativeConfig -Kind Registry -ConfigPath $ConfigPath -DryRun:$DryRun
 }
 
-$applied = 0
-$skipped = 0
-$failed = 0
-
-foreach ($entry in $entries) {
-    try {
-        if (-not $entry.path -or -not $entry.name -or -not $entry.type) {
-            throw "Registry entry missing required fields (path, name, type)"
-        }
-
-        $registryPath = Normalize-RegistryPath -Path $entry.path
-        $valueType = Convert-RegistryType -Type $entry.type
-        $desiredValue = $entry.value
-
-        if ($valueType -eq "DWord") {
-            $desiredValue = [int]$desiredValue
-        }
-
-        if (-not (Test-Path -LiteralPath $registryPath)) {
-            if ($DryRun) {
-                $skipped++
-                continue
-            }
-
-            New-Item -Path $registryPath -Force | Out-Null
-        }
-
-        $currentValue = $null
-        try {
-            $currentValue = (Get-ItemProperty -LiteralPath $registryPath -Name $entry.name -ErrorAction SilentlyContinue).$($entry.name)
-        }
-        catch {
-            $currentValue = $null
-        }
-
-        if ($null -ne $currentValue -and $currentValue -eq $desiredValue) {
-            $skipped++
-            continue
-        }
-
-        if ($DryRun) {
-            $skipped++
-            continue
-        }
-
-        Set-ItemProperty -LiteralPath $registryPath -Name $entry.name -Value $desiredValue -Type $valueType -Force
-        $applied++
-    }
-    catch {
-        $failed++
-    }
-}
-
-return [pscustomobject]@{
-    Applied = $applied
-    Skipped = $skipped
-    Failed = $failed
-}
+throw "DeclarativeConfig module not found at $DeclarativeConfigModule"

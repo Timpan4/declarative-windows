@@ -90,17 +90,83 @@ Describe "bootstrap.ps1 static checks" {
         $scriptContent | Should -Match "failed-installs\.log"
     }
 
-    It "checks individual packages after WinGet import" {
-        $scriptContent | Should -Match "stillMissing"
-        $scriptContent | Should -Match "Not installed after import from"
+    It "installs packages individually instead of using bulk import as the primary path" {
+        $scriptContent | Should -Match "Invoke-WingetPackageInstall"
+        $scriptContent | Should -Match "winget install --id"
+        $scriptContent | Should -Not -Match "winget import --import-file"
     }
 
     It "keeps partial WinGet failures retryable" {
-        $scriptContent | Should -Match 'Set-StepState -StepId \$stepId -Status "failed" -Message "\$failCount package\(s\) failed"'
+        $scriptContent | Should -Match 'Set-StepState -StepId \$StepId -Status "failed" -Message "\$failCount package\(s\) failed\$warningSuffix"'
     }
 
-    It "chooses newest backup manifest across drives" {
-        $scriptContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
-        $scriptContent | Should -Match 'newestMatch'
+    It "writes progress.json during bootstrap" {
+        $scriptContent | Should -Match 'progress\.json'
+        $scriptContent | Should -Match 'Update-SetupProgress'
+    }
+
+    It "logs useful WinGet output and detects elevation issues" {
+        $scriptContent | Should -Match 'Write-WingetOutput'
+        $scriptContent | Should -Match 'Test-WingetRequiresUnelevatedRetry'
+        $scriptContent | Should -Match 'cannot be run from an administrator context'
+        $scriptContent | Should -Match '\[\\\|/\\\\-\]\+'
+    }
+
+    It "preserves CreationDate and WinGetVersion in filtered apps json" {
+        $scriptContent | Should -Match 'CreationDate'
+        $scriptContent | Should -Match 'WinGetVersion'
+    }
+
+    It "treats missing backup manifest as warning not fatal for repo step" {
+        $scriptContent | Should -Match 'Backup manifest not found; using C:\\Setup fallback'
+        $scriptContent | Should -Match 'Set-StepState -StepId \$stepId -Status "skipped" -Message "Backup manifest not found; using C:\\Setup fallback"'
+        $scriptContent | Should -Not -Match 'Set-StepState -StepId \$stepId -Status "failed" -Message "Backup manifest not found"'
+    }
+
+    It "reports missing optional-apps.json gracefully in OptionalAppsOnly mode" {
+        $scriptContent | Should -Match 'optional-apps\.json not found'
+    }
+
+    It "tracks detailed progress state fields" {
+        $scriptContent | Should -Match 'phase = "Starting"'
+        $scriptContent | Should -Match 'status = "Initializing setup"'
+        $scriptContent | Should -Match 'currentPackage = ""'
+        $scriptContent | Should -Match 'packageIndex = 0'
+        $scriptContent | Should -Match 'packageTotal = 0'
+        $scriptContent | Should -Match 'mode = "admin"'
+        $scriptContent | Should -Match 'lastUpdated = \$null'
+    }
+
+    It "retries user-scope packages through a limited scheduled task" {
+        $scriptContent | Should -Match 'schtasks\.exe /Create'
+        $scriptContent | Should -Match '/RL LIMITED'
+        $scriptContent | Should -Match 'WingetInstallUnelevated-'
+        $scriptContent | Should -Match 'cannot be run from an administrator context'
+    }
+
+    It "updates progress during user-scope retry" {
+        $scriptContent | Should -Match "Retrying user-scope packages"
+        $scriptContent | Should -Match "mode = 'user'"
+        $scriptContent | Should -Match 'A second PowerShell window may appear for user-scope installers'
+    }
+
+    It "parses package counters from WinGet output" {
+        $installLogPattern = [regex]::Escape('Installing [{0}/{1}]: {2} ({3})')
+        $progressStatusPattern = [regex]::Escape('Installing package {0} of {1}')
+
+        $scriptContent | Should -Match $installLogPattern
+        $scriptContent | Should -Match $progressStatusPattern
+    }
+
+    It "classifies successful but unverified packages as verification warnings" {
+        $scriptContent | Should -Match 'WinGet reported success but winget list did not verify the package'
+        $scriptContent | Should -Match '\$unverifiedPackages'
+        $scriptContent | Should -Match '\$unverifiedCount'
+    }
+
+    It "sets registry values without passing an invalid Type parameter to Set-ItemProperty" {
+        $scriptContent | Should -Match "function Set-RegistryValueSafe"
+        $scriptContent | Should -Match '\[int\]\$Value'
+        $scriptContent | Should -Not -Match 'Set-ItemProperty[^\r\n]+-Type'
     }
 }

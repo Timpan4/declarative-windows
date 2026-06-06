@@ -5,7 +5,7 @@ Describe "build-iso.ps1 static checks" {
     }
 
     It "uses $OEM$ $1 Setup path" {
-        ($scriptContent -like '*sources*`$OEM`$*`$1\Setup*') | Should -BeTrue
+        ($scriptContent -like '*sources*`$OEM`$*`$1\Setup*') | Should -Be $true
     }
 
 
@@ -48,6 +48,12 @@ Describe "build-iso.ps1 static checks" {
         $scriptContent | Should -Match "Staged ISO layout validation passed"
     }
 
+    It "copies modules into the staged setup payload" {
+        $scriptContent | Should -Match "modules"
+        $scriptContent | Should -Match ([regex]::Escape('Copy-Item -Path $requiredDirectories["modules"]'))
+        $scriptContent | Should -Match "modules folder copied"
+    }
+
     It "checks unattend C:\\Setup references against the staged OEM payload" {
         $stagedPathPattern = [regex]::Escape('Join-Path $WorkRoot ''sources\$OEM$\$1\Setup''')
 
@@ -67,10 +73,11 @@ Describe "build-iso.ps1 static checks" {
     }
 
     It "passes source ISO into unattend validation" {
-        ($scriptContent -like '*-SourceISO $SourceISO*') | Should -BeTrue
+        $sourceIsoArgumentPattern = [regex]::Escape('-SourceISO $SourceISO')
+        $scriptContent | Should -Match $sourceIsoArgumentPattern
     }
 
     It "does not reference MountDir anymore" {
-        $scriptContent.Contains('$MountDir') | Should -BeFalse
+        $scriptContent.Contains('$MountDir') | Should -Be $false
     }
 }
