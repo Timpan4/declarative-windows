@@ -13,7 +13,7 @@ function Get-WingetPackageIdsFromJson {
         }
     }
 
-    return $packageIds | Sort-Object -Unique
+    return ,@($packageIds | Sort-Object -Unique)
 }
 
 function Test-WingetPackageInstalled {
