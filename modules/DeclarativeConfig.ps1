@@ -58,6 +58,9 @@ function Invoke-RegistryConfig {
             if ($valueType -eq "DWord") {
                 $desiredValue = [int]$desiredValue
             }
+            else {
+                $desiredValue = [string]$desiredValue
+            }
 
             if (-not (Test-Path -LiteralPath $registryPath)) {
                 if ($DryRun) {
@@ -68,15 +71,22 @@ function Invoke-RegistryConfig {
                 New-Item -Path $registryPath -Force | Out-Null
             }
 
+            $valueName = if ($entry.name -eq "(Default)") { "" } else { $entry.name }
             $currentValue = $null
+            $currentKind = $null
             try {
-                $currentValue = (Get-ItemProperty -LiteralPath $registryPath -Name $entry.name -ErrorAction SilentlyContinue).$($entry.name)
+                $registryKey = Get-Item -LiteralPath $registryPath -ErrorAction Stop
+                $currentValue = $registryKey.GetValue($valueName, $null, "DoNotExpandEnvironmentNames")
+                if ($null -ne $currentValue) {
+                    $currentKind = $registryKey.GetValueKind($valueName)
+                }
             }
             catch {
                 $currentValue = $null
+                $currentKind = $null
             }
 
-            if ($null -ne $currentValue -and $currentValue -eq $desiredValue) {
+            if ($null -ne $currentValue -and $currentValue -eq $desiredValue -and "$currentKind" -eq $valueType) {
                 $skipped++
                 continue
             }
@@ -86,7 +96,12 @@ function Invoke-RegistryConfig {
                 continue
             }
 
-            Set-ItemProperty -LiteralPath $registryPath -Name $entry.name -Value $desiredValue -Force
+            if ($entry.name -eq "(Default)") {
+                Set-Item -LiteralPath $registryPath -Value $desiredValue -Force
+            }
+            else {
+                New-ItemProperty -LiteralPath $registryPath -Name $entry.name -Value $desiredValue -PropertyType $valueType -Force | Out-Null
+            }
             $applied++
         }
         catch {
