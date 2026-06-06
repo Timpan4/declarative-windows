@@ -200,23 +200,28 @@ Write-Host "WinGet retry finished with exit code `$exitCode" -ForegroundColor Cy
 
         Set-Content -Path $runnerPath -Value $runnerContent -Encoding UTF8 -Force
 
-        $taskTime = (Get-Date).AddMinutes(1).ToString('HH:mm')
         $taskUser = if ($env:USERDOMAIN) { "$($env:USERDOMAIN)\$($env:USERNAME)" } else { $env:USERNAME }
-        $taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`""
+        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`""
+        $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
+        $taskPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
 
-        $createOutput = @(schtasks.exe /Create /F /TN $taskName /SC ONCE /ST $taskTime /TR $taskCommand /RL LIMITED /RU $taskUser 2>&1)
-        if ($LASTEXITCODE -ne 0) {
+        try {
+            $null = Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force -ErrorAction Stop
+        }
+        catch {
             return [pscustomobject]@{
-                ExitCode = $LASTEXITCODE
-                Output = @("Failed to create non-admin scheduled task") + $createOutput
+                ExitCode = 1
+                Output = @("Failed to create non-admin scheduled task", $_.Exception.Message)
             }
         }
 
-        $runOutput = @(schtasks.exe /Run /TN $taskName 2>&1)
-        if ($LASTEXITCODE -ne 0) {
+        try {
+            Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        }
+        catch {
             return [pscustomobject]@{
-                ExitCode = $LASTEXITCODE
-                Output = @("Failed to start non-admin scheduled task") + $runOutput
+                ExitCode = 1
+                Output = @("Failed to start non-admin scheduled task", $_.Exception.Message)
             }
         }
 
@@ -248,7 +253,7 @@ Write-Host "WinGet retry finished with exit code `$exitCode" -ForegroundColor Cy
         }
     }
     finally {
-        $null = schtasks.exe /Delete /F /TN $taskName 2>$null
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
         if (Test-Path $runnerPath) {
             Remove-Item -Path $runnerPath -Force -ErrorAction SilentlyContinue
@@ -336,7 +341,7 @@ function Invoke-WingetManifestInstall {
 
         Write-Log ("Package scan complete for {0}: {1} missing, {2} already installed" -f $ManifestLabel, $missingPackages.Count, $installedCount) -Level INFO
 
-        if (-not $missingPackages) {
+        if ($missingPackages.Count -eq 0) {
             Write-Log "All packages from $ManifestLabel are already installed" -Level SUCCESS
             Set-Content -Path $MarkerPath -Value $appsHash -Force
             Add-SummaryItem -Step $SummaryStep -Status "OK" -Message "Already up to date ($MarkerPath)"

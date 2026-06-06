@@ -1,7 +1,10 @@
 Describe "bootstrap.ps1 static checks" {
     BeforeAll {
         $scriptPath = Resolve-Path (Join-Path $PSScriptRoot "..\bootstrap.ps1")
+        $wingetModulePath = Resolve-Path (Join-Path $PSScriptRoot "..\modules\WinGetInstall.ps1")
         $scriptContent = Get-Content $scriptPath -Raw
+        $wingetModuleContent = Get-Content $wingetModulePath -Raw
+        $bootstrapAndWingetContent = $scriptContent + "`n" + $wingetModuleContent
     }
 
     It "tracks WinGet completion marker with hash" {
@@ -138,10 +141,13 @@ Describe "bootstrap.ps1 static checks" {
     }
 
     It "retries user-scope packages through a limited scheduled task" {
-        $scriptContent | Should -Match 'schtasks\.exe /Create'
-        $scriptContent | Should -Match '/RL LIMITED'
-        $scriptContent | Should -Match 'WingetInstallUnelevated-'
-        $scriptContent | Should -Match 'cannot be run from an administrator context'
+        $bootstrapAndWingetContent | Should -Match 'Register-ScheduledTask'
+        $bootstrapAndWingetContent | Should -Match 'New-ScheduledTaskPrincipal'
+        $bootstrapAndWingetContent | Should -Match 'RunLevel Limited'
+        $bootstrapAndWingetContent | Should -Match 'LogonType Interactive'
+        $bootstrapAndWingetContent | Should -Match 'WingetInstallUnelevated-'
+        $bootstrapAndWingetContent | Should -Match 'cannot be run from an administrator context'
+        $bootstrapAndWingetContent | Should -Not -Match 'schtasks\.exe /Create'
     }
 
     It "updates progress during user-scope retry" {

@@ -182,7 +182,13 @@ function Write-SummaryReport {
     )
 
     foreach ($item in $SummaryItems) {
-        $summaryLines += "{0} {1}: {2}" -f $item.Status, $item.Step, $item.Message
+        $statusSymbol = switch ($item.Status) {
+            "OK" { "✓" }
+            "WARN" { "⚠" }
+            "FAIL" { "✗" }
+            default { $item.Status }
+        }
+        $summaryLines += "{0} {1}: {2}" -f $statusSymbol, $item.Step, $item.Message
     }
 
     Set-Content -Path $summaryPath -Value $summaryLines -Force

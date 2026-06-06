@@ -1,7 +1,10 @@
 Describe "build-iso.ps1 static checks" {
     BeforeAll {
         $scriptPath = Resolve-Path (Join-Path $PSScriptRoot "..\build-iso.ps1")
+        $payloadModulePath = Resolve-Path (Join-Path $PSScriptRoot "..\modules\StagedSetupPayload.ps1")
         $scriptContent = Get-Content $scriptPath -Raw
+        $payloadModuleContent = Get-Content $payloadModulePath -Raw
+        $buildAndPayloadContent = $scriptContent + "`n" + $payloadModuleContent
     }
 
     It "uses $OEM$ $1 Setup path" {
@@ -43,9 +46,9 @@ Describe "build-iso.ps1 static checks" {
     }
 
     It "validates the staged ISO layout before oscdimg" {
-        $scriptContent | Should -Match "Validate-StagedIsoLayout"
+        $buildAndPayloadContent | Should -Match "Validate-StagedIsoLayout"
         $scriptContent | Should -Match "Validating staged ISO layout"
-        $scriptContent | Should -Match "Staged ISO layout validation passed"
+        $buildAndPayloadContent | Should -Match "Staged ISO layout validation passed"
     }
 
     It "copies modules into the staged setup payload" {
@@ -57,14 +60,14 @@ Describe "build-iso.ps1 static checks" {
     It "checks unattend C:\\Setup references against the staged OEM payload" {
         $stagedPathPattern = [regex]::Escape('Join-Path $WorkRoot ''sources\$OEM$\$1\Setup''')
 
-        $scriptContent | Should -Match "Get-UnattendSetupFileReferences"
-        $scriptContent | Should -Match "C:\\Setup\\"
-        $scriptContent | Should -Match $stagedPathPattern
-        $scriptContent | Should -Match "autounattend\.xml references .* staged ISO is missing"
+        $buildAndPayloadContent | Should -Match "Get-UnattendSetupFileReferences"
+        $buildAndPayloadContent | Should -Match "C:\\Setup\\"
+        $buildAndPayloadContent | Should -Match $stagedPathPattern
+        $buildAndPayloadContent | Should -Match "autounattend\.xml references .* staged ISO is missing"
     }
 
     It "runs staged layout validation before building the ISO" {
-        $validationIndex = $scriptContent.IndexOf('Validate-StagedIsoLayout')
+        $validationIndex = $scriptContent.LastIndexOf('Validate-StagedIsoLayout')
         $buildIndex = $scriptContent.IndexOf('Write-Step "Building custom ISO with oscdimg"')
 
         $validationIndex | Should -BeGreaterThan -1

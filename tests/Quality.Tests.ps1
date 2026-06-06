@@ -1,11 +1,12 @@
 Describe "repository quality checks" {
     BeforeAll {
         $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+        $gitPathPattern = '([\\/]\.git([\\/]|$))'
     }
 
     It "parses all PowerShell scripts" {
         $scripts = Get-ChildItem -Path $repoRoot -Recurse -File -Filter "*.ps1" |
-            Where-Object { $_.FullName -notmatch '\\.git\\' }
+            Where-Object { $_.FullName -notmatch $gitPathPattern }
 
         foreach ($script in $scripts) {
             $tokens = $null
@@ -18,14 +19,14 @@ Describe "repository quality checks" {
     It "does not contain unresolved merge conflict markers" {
         $files = Get-ChildItem -Path $repoRoot -Recurse -File |
             Where-Object {
-                $_.FullName -notmatch '\\.git\\' -and
-                $_.Extension -in @(".ps1", ".md", ".json", ".xml")
+                $_.FullName -notmatch $gitPathPattern -and
+                $_.Extension -in @(".ps1", ".md", ".json", ".xml", ".yml", ".yaml")
             }
 
-        $matches = foreach ($file in $files) {
+        $conflictMarkers = foreach ($file in $files) {
             Select-String -LiteralPath $file.FullName -Pattern '^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)'
         }
 
-        $matches | Should -BeNullOrEmpty
+        $conflictMarkers | Should -BeNullOrEmpty
     }
 }
