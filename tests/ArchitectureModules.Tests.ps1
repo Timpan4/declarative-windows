@@ -29,6 +29,29 @@ Describe "architecture module checks" {
         $modules.WinGetInstall | Should -Match "Retrying user-scope packages"
     }
 
+    It "returns an array for one-package WinGet manifests" {
+        . (Join-Path $moduleRoot "WinGetInstall.ps1")
+
+        $manifestPath = Join-Path $TestDrive "apps.json"
+        @'
+{
+  "Sources": [
+    {
+      "Packages": [
+        { "PackageIdentifier": "Vendor.OneApp" }
+      ]
+    }
+  ]
+}
+'@ | Set-Content -Path $manifestPath -Encoding UTF8
+
+        $packageIds = Get-WingetPackageIdsFromJson -Path $manifestPath
+
+        $packageIds.GetType().IsArray | Should -BeTrue
+        $packageIds.Count | Should -Be 1
+        $packageIds[0] | Should -Be "Vendor.OneApp"
+    }
+
     It "has a shared BackupManifest module for source and target remapping" {
         $modules.BackupManifest | Should -Match "function Find-BackupManifest"
         $modules.BackupManifest | Should -Match "function Get-BackupManifestRoot"
