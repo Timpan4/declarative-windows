@@ -124,6 +124,62 @@ Failed to download package
 
 ---
 
+### Package Shows as Verification Warning
+
+**Symptoms:**
+
+```
+WinGet reported success but winget list did not verify the package
+```
+
+**What it means:**
+
+- The installer exited successfully.
+- `winget list --id <package-id> --exact` did not find the package afterward.
+- This can happen when a package installs under a different display name, creates a per-user install, or registers after a delay.
+
+**Solutions:**
+
+1. **Check manually:**
+   ```powershell
+   winget list --id <package-id> --exact
+   winget list | Select-String "<app-name>"
+   ```
+
+2. **Open the app once** if it uses a first-run registration step.
+
+3. **Only reinstall if it is truly missing:**
+   ```powershell
+   winget install --id <package-id> --exact --accept-package-agreements --accept-source-agreements
+   ```
+
+---
+
+### Package Failed After Per-Package Install
+
+**Symptoms:**
+
+```
+<package-id> still not installed after WinGet install
+```
+
+**Solutions:**
+
+1. **Review the reports:**
+   ```powershell
+   Get-Content C:\Setup\failed-installs.log
+   Get-Content "$env:USERPROFILE\Desktop\Failed Installs.txt"
+   ```
+
+2. **Retry one package directly:**
+   ```powershell
+   winget install --id <package-id> --exact --accept-package-agreements --accept-source-agreements
+   ```
+
+3. **If WinGet says the installer cannot run as administrator,** re-run setup from the desktop shortcut or install that package from a non-admin PowerShell session.
+
+---
+
 ## Sophia Script Issues
 
 ### Sophia Script Not Found
@@ -415,6 +471,36 @@ cannot be loaded because running scripts is disabled
    $desktopPath = [Environment]::GetFolderPath("Desktop")
    Write-Host $desktopPath
    ```
+
+---
+
+### Backup Manifest Not Found
+
+**Symptoms:**
+
+```
+Backup manifest not found; using C:\Setup fallback
+```
+
+**What it means:**
+
+- Setup did not find `backup-manifest.json` on another drive.
+- Bootstrap continues from the staged setup payload in `C:\Setup`.
+- Repo clone and personal repo file restore are skipped until a manifest is available.
+
+**Solutions:**
+
+1. **If you made a preflight backup, attach that drive and run restore manually:**
+   ```powershell
+   powershell.exe -ExecutionPolicy Bypass -File C:\Setup\restore-backup.ps1
+   ```
+
+2. **If autodetection fails, pass the manifest path explicitly:**
+   ```powershell
+   powershell.exe -ExecutionPolicy Bypass -File C:\Setup\restore-backup.ps1 -ManifestPath "E:\declarative-windows-backup\<backup>\backup-manifest.json"
+   ```
+
+3. **If you did not make a preflight backup,** clone the repo manually later and copy any personal config files back into place.
 
 ---
 

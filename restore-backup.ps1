@@ -109,6 +109,47 @@ function Resolve-RestoreTargetPath {
     return $expandedPath
 }
 
+function Resolve-BackupSourcePath {
+    param(
+        [string]$Path,
+
+        [string]$ManifestBackupRoot,
+        [string]$ActualBackupRoot
+    )
+
+    $expandedPath = [Environment]::ExpandEnvironmentVariables($Path)
+    if (-not [System.IO.Path]::IsPathRooted($expandedPath)) {
+        if ($ActualBackupRoot) {
+            return Join-Path $ActualBackupRoot $expandedPath
+        }
+
+        return $expandedPath
+    }
+
+    if (Test-Path $expandedPath) {
+        return $expandedPath
+    }
+
+    if ($ManifestBackupRoot -and $ActualBackupRoot -and $expandedPath.StartsWith($ManifestBackupRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $relativePath = $expandedPath.Substring($ManifestBackupRoot.Length).TrimStart('\\')
+        $candidatePath = if ($relativePath) {
+            Join-Path $ActualBackupRoot $relativePath
+        }
+        else {
+            $ActualBackupRoot
+        }
+
+        if (Test-Path $candidatePath) {
+            Write-Info "Using remapped backup path: $candidatePath"
+            return $candidatePath
+        }
+    }
+
+    return $expandedPath
+}
+
+$actualBackupRoot = $null
+
 function Copy-Tree {
     param(
         [string]$Source,
@@ -153,6 +194,12 @@ function Copy-Tree {
     return $LASTEXITCODE -lt 8
 }
 
+$ModuleRoot = Join-Path $PSScriptRoot "modules"
+$BackupManifestModule = Join-Path $ModuleRoot "BackupManifest.ps1"
+if (Test-Path $BackupManifestModule) {
+    . $BackupManifestModule
+}
+
 if (-not $ManifestPath) {
     $ManifestPath = Find-BackupManifest
 }
@@ -162,8 +209,9 @@ if (-not $ManifestPath) {
 }
 
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
-$manifestDir = Split-Path $resolvedManifestPath -Parent
 $manifest = Get-Content -Path $resolvedManifestPath -Raw | ConvertFrom-Json
+$actualBackupRoot = Split-Path -Parent $resolvedManifestPath
+$manifestBackupRoot = Get-BackupManifestRoot -Manifest $manifest
 
 if (-not $DestinationProfileRoot) {
     $DestinationProfileRoot = $env:USERPROFILE
@@ -198,14 +246,15 @@ foreach ($repoFile in $manifest.repoFiles) {
         }
     }
 
+    $repoFileSource = Resolve-BackupSourcePath -Path $repoFile.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
+
     if ((Test-Path $destination) -and $Mode -eq "SkipExisting") {
         $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "skipped" })
         continue
     }
 
     if ($PSCmdlet.ShouldProcess($destination, "Restore repo file")) {
-        $sourcePath = Join-Path $manifestDir $repoFile.backupPath
-        Copy-Item -Path $sourcePath -Destination $destination -Force:($Mode -eq "Overwrite")
+        Copy-Item -Path $repoFileSource -Destination $destination -Force:($Mode -eq "Overwrite")
     }
 
     $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
@@ -213,12 +262,7 @@ foreach ($repoFile in $manifest.repoFiles) {
 
 # Build restore target map from manifest
 $originalOsDrive = $manifest.machine.osDrive
-$restoreTargetMap = @{}
-if ($manifest.restoreTargets) {
-    foreach ($prop in $manifest.restoreTargets.PSObject.Properties) {
-        $restoreTargetMap[$prop.Name] = $prop.Value
-    }
-}
+$restoreTargetMap = Get-RestoreTargetMap -Manifest $manifest
 
 foreach ($rule in $manifest.rules) {
     if (-not $rule.success) {
@@ -229,8 +273,8 @@ foreach ($rule in $manifest.rules) {
         continue
     }
 
+    $sourcePath = Resolve-BackupSourcePath -Path $rule.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
     $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap
-    $sourcePath = Join-Path $manifestDir $rule.backupPath
     $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
     $restoreReport.Add([pscustomobject]@{
         type = "content"

@@ -23,6 +23,11 @@ $DefaultConfigPath = Join-Path $ScriptRoot "config\backup.json"
 $TemplateConfigPath = Join-Path $ScriptRoot "config\backup.template.json"
 $ManifestFileName = "backup-manifest.json"
 $BackupContainerName = "declarative-windows-backup"
+$ModuleRoot = Join-Path $ScriptRoot "modules"
+$BackupManifestModule = Join-Path $ModuleRoot "BackupManifest.ps1"
+if (Test-Path $BackupManifestModule) {
+    . $BackupManifestModule
+}
 
 function Write-Info {
     param([string]$Message)
@@ -402,38 +407,35 @@ Write-Progress -Activity "Exporting WinGet inventory" -Status "Running winget ex
 $wingetExported = Export-WingetInventory -OutputPath $wingetExportPath
 Write-Progress -Activity "Exporting WinGet inventory" -Completed
 
-$manifest = [ordered]@{
-    manifestVersion = 1
-    createdAt = (Get-Date).ToString("o")
-    machine = [ordered]@{
+$manifest = New-BackupManifest `
+    -Machine ([ordered]@{
         computerName = $env:COMPUTERNAME
         userProfile = $env:USERPROFILE
         osDrive = $env:SystemDrive
-    }
-    repo = [ordered]@{
+    }) `
+    -Repo ([ordered]@{
         remoteUrl = $repoRemoteUrl
         name = "declarative-windows"
         restorePath = $canonicalRepoPath
-    }
-    backup = [ordered]@{
+    }) `
+    -Backup ([ordered]@{
         destinationRoot = (Resolve-Path $DestinationRoot).Path
         backupRoot = $sessionRoot
         filesRoot = $filesRoot
         repoFilesRoot = $repoFilesRoot
         exportsRoot = $exportsRoot
         reportPath = (Join-Path $reportsRoot "backup-report.txt")
-    }
-    config = [ordered]@{
+    }) `
+    -Config ([ordered]@{
         sourcePath = $effectiveConfigPath
         templateFallbackUsed = $effectiveConfigPath -eq (Resolve-Path $TemplateConfigPath).Path
-    }
-    rules = $manifestRules
-    repoFiles = $manifestRepoFiles
-    exports = [ordered]@{
+    }) `
+    -Rules @($manifestRules) `
+    -RepoFiles @($manifestRepoFiles) `
+    -Exports ([ordered]@{
         wingetPath = if ($wingetExported) { $wingetExportPath } else { $null }
-    }
-    failures = $failedRules
-}
+    }) `
+    -Failures @($failedRules)
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 8
 if ($PSCmdlet.ShouldProcess($ManifestPath, "Write backup manifest")) {
