@@ -82,5 +82,10 @@ function Validate-StagedIsoLayout {
         }
     }
 
-    Write-Success 'Staged ISO layout validation passed'
+    if (Get-Command Write-Success -ErrorAction SilentlyContinue) {
+        Write-Success 'Staged ISO layout validation passed'
+    }
+    else {
+        Write-Host 'Staged ISO layout validation passed' -ForegroundColor Green
+    }
 }

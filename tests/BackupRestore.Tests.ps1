@@ -32,9 +32,9 @@ Describe "backup and restore static checks" {
     }
 
     It "supports restore manifest autodetection" {
-        $restoreScriptContent | Should -Match "Find-BackupManifest"
-        $restoreScriptContent | Should -Match "declarative-windows-backup"
-        $restoreScriptContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
+        $restoreAndModuleContent | Should -Match "Find-BackupManifest"
+        $restoreAndModuleContent | Should -Match "declarative-windows-backup"
+        $restoreAndModuleContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
     }
 
     It "remaps backup paths when drive letter differs from manifest" {
@@ -64,8 +64,8 @@ Describe "backup and restore static checks" {
     }
 
     It "reports when a remapped backup path is used" {
-        $restoreScriptContent | Should -Match 'Using remapped backup path:'
-        $restoreScriptContent | Should -Match 'Write-Info'
+        $restoreAndModuleContent | Should -Match 'Using remapped backup path:'
+        $restoreAndModuleContent | Should -Match 'Write-Info'
     }
 
     It "shares backup manifest implementation through a module" {

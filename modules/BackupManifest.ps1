@@ -61,7 +61,7 @@ function Resolve-BackupSourcePath {
     }
 
     if ($ManifestBackupRoot -and $ActualBackupRoot -and $expandedPath.StartsWith($ManifestBackupRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        $relativePath = $expandedPath.Substring($ManifestBackupRoot.Length).TrimStart('\\')
+        $relativePath = $expandedPath.Substring($ManifestBackupRoot.Length).TrimStart('\')
         $candidatePath = if ($relativePath) {
             Join-Path $ActualBackupRoot $relativePath
         }

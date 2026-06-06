@@ -128,7 +128,7 @@ Failed to download package
 
 **Symptoms:**
 
-```
+```text
 WinGet reported success but winget list did not verify the package
 ```
 
@@ -159,7 +159,7 @@ WinGet reported success but winget list did not verify the package
 
 **Symptoms:**
 
-```
+```text
 <package-id> still not installed after WinGet install
 ```
 
@@ -478,7 +478,7 @@ cannot be loaded because running scripts is disabled
 
 **Symptoms:**
 
-```
+```text
 Backup manifest not found; using C:\Setup fallback
 ```
 
