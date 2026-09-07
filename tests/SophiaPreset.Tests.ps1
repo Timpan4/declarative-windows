@@ -55,6 +55,22 @@ Describe 'selected Sophia preset execution' {
         Should -Invoke Set-StepState -Times 1 -ParameterFilter { $Status -eq 'failed' }
     }
 
+    It 'preserves upstream initialization behavior for optional missing paths' {
+        Set-Content -LiteralPath (Join-Path $SophiaDir 'Module\Private\InitialActions.ps1') -Value 'function InitialActions { Get-Item -LiteralPath (Join-Path $env:DW_SOPHIA_FIXTURE ''missing-optional-path'') }'
+        . $runSophiaStep
+        Test-Path -LiteralPath (Join-Path $fixture 'custom-ran') | Should -BeTrue
+        Test-Path -LiteralPath $SophiaMarker | Should -BeTrue
+        Should -Invoke Set-StepState -Times 1 -ParameterFilter { $Status -eq 'done' }
+    }
+
+    It 'does not mark completion after a terminating initialization failure' {
+        Set-Content -LiteralPath (Join-Path $SophiaDir 'Module\Private\InitialActions.ps1') -Value 'function InitialActions { throw ''Synthetic initialization failure'' }'
+        . $runSophiaStep
+        Test-Path -LiteralPath $SophiaMarker | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $fixture 'custom-ran') | Should -BeFalse
+        Should -Invoke Set-StepState -Times 1 -ParameterFilter { $Status -eq 'failed' }
+    }
+
     It 'does not mark completion after a preset error' {
         Set-Content -LiteralPath $SophiaPreset -Value 'Write-Error ''Synthetic preset failure'''
         . $runSophiaStep
