@@ -165,7 +165,7 @@ function Update-SetupProgress {
     }
 
     $script:ProgressState.lastUpdated = (Get-Date).ToString('o')
-    [pscustomobject]$script:ProgressState | ConvertTo-Json -Depth 4 | Set-Content -Path $ProgressFile -Encoding UTF8 -Force
+    [pscustomobject]$script:ProgressState | ConvertTo-Json -Depth 4 | Set-Content -Path $ProgressFile -Encoding UTF8 -Force -ErrorAction Stop
 }
 
 function Add-SummaryItem {
@@ -295,42 +295,52 @@ function Write-FailedInstallsReport {
             $lines += "{0} {1}: {2} - {3}" -f $problem.Status, $problem.Category, $problem.Item, $problem.Reason
         }
     }
-    $lines | Set-Content -LiteralPath $FailedInstallsLog -Force -ErrorAction Stop
+    $reportPaths = @($FailedInstallsLog)
     if ($DesktopPath) {
         $desktopReport = Join-Path $DesktopPath "Failed Installs.txt"
-        $lines | Set-Content -LiteralPath $desktopReport -Force -ErrorAction Stop
-        return $desktopReport
+        $reportPaths += $desktopReport
     }
-    return $FailedInstallsLog
+    $writeErrors = @(
+        foreach ($path in $reportPaths) {
+            try { $lines | Set-Content -LiteralPath $path -Force -ErrorAction Stop }
+            catch { $_.Exception.Message }
+        }
+    )
+    if ($writeErrors.Count) { throw ($writeErrors -join '; ') }
+    return $reportPaths[-1]
 }
 
 function Complete-BootstrapRun {
     param([string]$DesktopPath, [string]$FailureMessage = "")
 
     $result = Get-BootstrapRunResult -FailureMessage $FailureMessage
+    $publicationErrors = @()
     if (-not $DryRun) {
         try {
             $null = Write-FailedInstallsReport -DesktopPath $DesktopPath -Result $result
             $null = Write-SummaryReport -DesktopPath $DesktopPath -Result $result
         }
         catch {
-            $reportFailure = "Report generation failed: $($_.Exception.Message)"
-            Write-Log $reportFailure -Level ERROR
-            $result = Get-BootstrapRunResult -FailureMessage (($FailureMessage, $reportFailure | Where-Object { $_ }) -join '; ')
-            # Correct any report that was written before the other destination failed.
-            foreach ($writer in @('Write-FailedInstallsReport', 'Write-SummaryReport')) {
-                try {
-                    $null = & $writer -DesktopPath $DesktopPath -Result $result
-                }
-                catch {
-                    Write-Log "Cannot publish corrected report: $($_.Exception.Message)" -Level ERROR
-                }
-            }
+            $publicationErrors += "Report generation failed: $($_.Exception.Message)"
+            $result = Get-BootstrapRunResult -FailureMessage ((@($FailureMessage) + $publicationErrors | Where-Object { $_ }) -join '; ')
+        }
+    }
+    try {
+        Update-SetupProgress -Phase $result.Status -Status "Windows setup bootstrap: $($result.Status)" -ResetPackage -Mode 'admin'
+    }
+    catch {
+        $publicationErrors += "Progress publication failed: $($_.Exception.Message)"
+        $result = Get-BootstrapRunResult -FailureMessage ((@($FailureMessage) + $publicationErrors | Where-Object { $_ }) -join '; ')
+    }
+    if ($publicationErrors.Count -and -not $DryRun) {
+        # Publish the corrected failure result to each destination still writable.
+        foreach ($writer in @('Write-FailedInstallsReport', 'Write-SummaryReport')) {
+            try { $null = & $writer -DesktopPath $DesktopPath -Result $result }
+            catch { Write-Log "Cannot publish corrected report: $($_.Exception.Message)" -Level ERROR }
         }
     }
     $level = if ($result.ExitCode) { 'ERROR' } elseif ($result.Status -eq 'Completed') { 'SUCCESS' } else { 'WARNING' }
     Write-Log "Windows Setup Bootstrap - $($result.Status)" -Level $level
-    Update-SetupProgress -Phase $result.Status -Status "Windows setup bootstrap: $($result.Status)" -ResetPackage -Mode 'admin'
     return $result
 }
 

@@ -114,6 +114,20 @@ Describe 'Bootstrap run outcomes and reports' {
         Get-Content (Join-Path $TestDrive 'Setup Summary.txt') -Raw | Should -Match 'Result: Failed'
     }
 
+    It 'publishes desktop failure reports even when the setup log directory is missing' {
+        $FailedInstallsLog = Join-Path $TestDrive 'missing/failed-installs.log'
+        $ProgressFile = Join-Path $TestDrive 'missing/progress.json'
+        $result = Complete-BootstrapRun -DesktopPath $TestDrive -FailureMessage 'Setup directory missing'
+        $result.ExitCode | Should -Be 1
+        foreach ($name in @('Setup Summary.txt', 'Failed Installs.txt')) {
+            $report = Get-Content (Join-Path $TestDrive $name) -Raw
+            $report | Should -Match 'Result: Failed'
+            $report | Should -Match 'Setup directory missing'
+            $report | Should -Match 'Report generation failed'
+            $report | Should -Match 'Progress publication failed'
+        }
+    }
+
     It 'does not rewrite reports during a preview' {
         $DryRun = $true
         Mock Write-SummaryReport { throw 'Must not write' }
