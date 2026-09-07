@@ -26,7 +26,7 @@
     Requirements:
     - Windows ADK (for oscdimg.exe) - https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
     - Administrator privileges
-    - At least 10GB free disk space
+    - Free space for the measured staging and output estimates
 #>
 
 [CmdletBinding()]
@@ -105,6 +105,8 @@ $StagedSetupPayloadModule = Join-Path $ModuleRoot "StagedSetupPayload.ps1"
 if (Test-Path $StagedSetupPayloadModule) {
     . $StagedSetupPayloadModule
 }
+
+. (Join-Path $ModuleRoot "IsoBuildPreflight.ps1")
 
 # Function to find oscdimg.exe from Windows ADK
 function Find-OscdImg {
@@ -199,70 +201,29 @@ try {
 
     $validateUnattendScript = Join-Path $ScriptRoot "validate-unattend.ps1"
 
-    $requiredFiles = @{
-        "autounattend.xml" = Join-Path $ScriptRoot "autounattend.xml"
-        "bootstrap.ps1" = Join-Path $ScriptRoot "bootstrap.ps1"
-        "apps.json" = Join-Path $ScriptRoot "apps.json"
-        "Sophia-Preset.ps1" = Join-Path $ScriptRoot "Sophia-Preset.ps1"
-        "restore-backup.ps1" = Join-Path $ScriptRoot "restore-backup.ps1"
-        "apply-registry.ps1" = Join-Path $ScriptRoot "apply-registry.ps1"
-        "registry.json" = Join-Path $ScriptRoot "config\registry.json"
-        "backup.template.json" = Join-Path $ScriptRoot "config\backup.template.json"
+    $payload = @(Get-IsoSetupPayload -ProjectRoot $ScriptRoot)
+    $hasOptionalApps = Test-Path -LiteralPath (Join-Path $ScriptRoot 'optional-apps.json') -PathType Leaf
+    Write-Step "Selected setup payload (paths only)"
+    foreach ($file in $payload) {
+        Write-Info "$($file.Source) -> $($file.RelativePath)"
+    }
+    if (-not $hasOptionalApps) {
+        Write-Info "optional-apps.json not found - skipping optional apps payload"
     }
 
-    $requiredDirectories = @{
-        "modules" = Join-Path $ScriptRoot "modules"
-    }
-
-    $optionalFiles = @{
-        "optional-apps.json" = Join-Path $ScriptRoot "optional-apps.json"
-    }
-
-    foreach ($file in $requiredFiles.GetEnumerator()) {
-        if (Test-Path $file.Value) {
-            Write-Success "$($file.Key) found"
-        }
-        else {
-            Write-ErrorMessage "$($file.Key) not found at: $($file.Value)"
-            throw "Missing required file: $($file.Key)"
-        }
-    }
-
-    foreach ($directory in $requiredDirectories.GetEnumerator()) {
-        if (Test-Path $directory.Value -PathType Container) {
-            Write-Success "$($directory.Key) found"
-        }
-        else {
-            Write-ErrorMessage "$($directory.Key) not found at: $($directory.Value)"
-            throw "Missing required directory: $($directory.Key)"
-        }
-    }
-
-    foreach ($file in $optionalFiles.GetEnumerator()) {
-        if (Test-Path $file.Value) {
-            Write-Success "$($file.Key) found"
-        }
-        else {
-            Write-Info "$($file.Key) not found - skipping optional apps payload"
-        }
-    }
-
+    # Reject invalid destinations and existing outputs before mounting or staging.
+    $outputPath = Get-IsoOutputPath -SourceISO $SourceISO -OutputISO $OutputISO
+    $outputDir = Split-Path $outputPath -Parent
     # Validate source ISO checksum if provided
     Validate-SourceIsoHash -IsoPath $SourceISO -ExpectedHash $SourceIsoHash
 
     # Validate autounattend.xml before doing any expensive ISO work
     Write-Step "Validating autounattend.xml"
-    & $validateUnattendScript -UnattendPath $requiredFiles["autounattend.xml"] -SourceISO $SourceISO
+    & $validateUnattendScript -UnattendPath (Join-Path $ScriptRoot "autounattend.xml") -SourceISO $SourceISO
     Write-Success "autounattend.xml validation passed"
 
     # Find oscdimg.exe
     $oscdimgPath = Find-OscdImg -DownloadUrl $OscdimgDownloadUrl
-
-    # Create temporary directories
-    Write-Step "Creating temporary directories"
-    New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
-    New-Item -Path $WorkDir -ItemType Directory -Force | Out-Null
-    Write-Success "Temporary directories created at: $TempDir"
 
     # Mount source ISO
     Write-Step "Mounting source ISO"
@@ -289,6 +250,10 @@ try {
         Write-Info "Using user-provided ISO label: $IsoLabel"
     }
 
+    Assert-IsoBuildSpace -SourceRoot $sourceRoot -Payload $payload -StagingDirectory $env:TEMP -OutputDirectory $outputDir
+
+    # Stage only after destination and measured capacity checks have passed.
+    [void][IO.Directory]::CreateDirectory($WorkDir)
     # Copy ISO contents to working directory
     Write-Step "Copying ISO contents (this may take a few minutes)"
     Write-Info "Destination: $WorkDir"
@@ -301,52 +266,11 @@ try {
     Dismount-DiskImage -ImagePath (Resolve-Path $SourceISO).Path | Out-Null
     Write-Success "Source ISO unmounted"
 
-    # Copy autounattend.xml to root
-    Write-Step "Injecting autounattend.xml"
-    Copy-Item -Path $requiredFiles["autounattend.xml"] -Destination $WorkDir -Force
-    Write-Success "autounattend.xml copied to ISO root"
-
-    # Create sources\$OEM$ folder structure
-    Write-Step "Creating `$OEM`$ folder structure"
-    $oemPath = Join-Path (Join-Path $WorkDir "sources") "`$OEM`$"
-    $setupPath = Join-Path $oemPath "`$1\Setup"
-    New-Item -Path $setupPath -ItemType Directory -Force | Out-Null
-    Write-Success "sources\`$OEM`$\`$1\Setup folder created"
-
-    # Copy setup files to sources\$OEM$\$1\Setup
-    Write-Step "Copying setup files to `$OEM`$\`$1\Setup"
-
-    $filesToCopy = @(
-        @{ Name = "bootstrap.ps1"; Path = $requiredFiles["bootstrap.ps1"] },
-        @{ Name = "apps.json"; Path = $requiredFiles["apps.json"] },
-        @{ Name = "Sophia-Preset.ps1"; Path = $requiredFiles["Sophia-Preset.ps1"] },
-        @{ Name = "restore-backup.ps1"; Path = $requiredFiles["restore-backup.ps1"] },
-        @{ Name = "apply-registry.ps1"; Path = $requiredFiles["apply-registry.ps1"] }
-    )
-
-    foreach ($file in $filesToCopy) {
-        Copy-Item -Path $file.Path -Destination $setupPath -Force
-        Write-Success "$($file.Name) copied"
-    }
-
-    Copy-Item -Path $requiredDirectories["modules"] -Destination (Join-Path $setupPath "modules") -Recurse -Force
-    Write-Success "modules folder copied"
-
-    if (Test-Path $optionalFiles["optional-apps.json"]) {
-        Copy-Item -Path $optionalFiles["optional-apps.json"] -Destination $setupPath -Force
-        Write-Success "optional-apps.json copied"
-    }
-
-    # Copy config files
-    Write-Step "Copying config files"
-    $configSource = Join-Path $ScriptRoot "config"
-    $configDestination = Join-Path $setupPath "config"
-    Copy-Item -Path $configSource -Destination $configDestination -Recurse -Force
-    Write-Success "config folder copied"
-
+    Write-Step 'Copying selected setup payload to sources\$OEM$\$1\Setup'
+    Copy-IsoSetupPayload -Payload $payload -WorkRoot $WorkDir
     # Fail the build here if the staged tree does not match the paths unattend will use later.
     Write-Step "Validating staged ISO layout"
-    Validate-StagedIsoLayout -WorkRoot $WorkDir -UnattendPath (Join-Path $WorkDir "autounattend.xml") -HasOptionalApps (Test-Path $optionalFiles["optional-apps.json"])
+    Validate-StagedIsoLayout -WorkRoot $WorkDir -UnattendPath (Join-Path $WorkDir "autounattend.xml") -HasOptionalApps $hasOptionalApps
 
     # Build the ISO
     Write-Step "Building custom ISO with oscdimg"
@@ -367,15 +291,10 @@ try {
         Write-Info "efisys_noprompt.bin not found, falling back to efisys.bin"
     }
 
-    # Resolve output path
-    $outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputISO)
-
-    # Ensure output directory exists
-    $outputDir = Split-Path $outputPath -Parent
-    if ($outputDir -and -not (Test-Path $outputDir)) {
-        New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
-    }
-
+    # Build beside the destination, then publish without replacing an existing file.
+    $pendingOutputDir = Join-Path $outputDir ("declarative-windows-iso-" + [guid]::NewGuid())
+    [void][IO.Directory]::CreateDirectory($pendingOutputDir)
+    $pendingOutput = Join-Path $pendingOutputDir 'output.iso'
     # Build ISO with oscdimg
     # Using same parameters as official Windows ISO creation
     $oscdimgArgs = @(
@@ -386,7 +305,7 @@ try {
         "-l$IsoLabel",                  # ISO label
         "-bootdata:2#p0,e,b`"$bootImage`"#pEF,e,b`"$efiBootImage`"",  # Dual boot (BIOS + UEFI)
         "`"$WorkDir`"",                 # Source directory
-        "`"$outputPath`""               # Output ISO
+        "`"$pendingOutput`""               # Output ISO
     )
 
     Write-Info "Running: oscdimg $($oscdimgArgs -join ' ')"
@@ -399,6 +318,8 @@ try {
     else {
         throw "oscdimg.exe failed with exit code: $($process.ExitCode)"
     }
+
+    [IO.File]::Move($pendingOutput, $outputPath)
 
     # Verify output file was created
     if (Test-Path $outputPath) {
@@ -440,6 +361,13 @@ catch {
     exit 1
 }
 finally {
+    if ($pendingOutputDir -and (Test-Path -LiteralPath $pendingOutputDir)) {
+        # Only this build's generated ISO is removed; never remove the destination.
+        if (Test-Path -LiteralPath $pendingOutput) {
+            Remove-Item -LiteralPath $pendingOutput -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $pendingOutputDir -ErrorAction SilentlyContinue
+    }
     # Cleanup
     Write-Step "Cleaning up temporary files"
 
