@@ -187,85 +187,151 @@ function Add-SummaryItem {
     })
 }
 
+function Get-BootstrapRunResult {
+    param([string]$FailureMessage = "")
+
+    $records = @(
+        foreach ($id in $SetupState.steps.Keys) {
+            if ($id -eq 'summary') { continue }
+            $step = $SetupState.steps[$id]
+            $included = $id -in $RunStepIds
+            $origin = if ($step.lastRun -and $step.lastRun -ge $RunStartedAt) { 'Current run' } else { 'Previous result' }
+            [pscustomobject]@{
+                Step = $id
+                Status = $step.status
+                Message = $step.message
+                Origin = $origin
+                Included = $included
+            }
+        }
+    )
+    $problems = @(
+        foreach ($record in $records) {
+            if ($record.Included -and $record.Status -notin @('done', 'skipped')) {
+                [pscustomobject]@{
+                    Category = $record.Step
+                    Item = $record.Status
+                    Reason = $record.Message
+                    Status = if ($record.Status -eq 'unverified') { 'WARN' } else { 'FAIL' }
+                }
+            }
+        }
+        foreach ($item in $FailedItems) { $item }
+        foreach ($item in $SummaryItems) {
+            if ($item.Status -in @('FAIL', 'WARN')) {
+                [pscustomobject]@{ Category = $item.Step; Item = $item.Status; Reason = $item.Message; Status = $item.Status }
+            }
+        }
+        if ($FailureMessage) {
+            [pscustomobject]@{ Category = 'Bootstrap'; Item = 'Fatal error'; Reason = $FailureMessage; Status = 'FAIL' }
+        }
+    )
+    $failed = @($problems | Where-Object { $_.Status -ne 'WARN' }).Count -gt 0
+    $status = if ($failed) { 'Failed' } elseif ($problems.Count) { 'Completed with warnings' } else { 'Completed' }
+    if ($DryRun -and -not $FailureMessage) { $status = 'Preview'; $failed = $false }
+    [pscustomobject]@{
+        StartedAt = $RunStartedAt
+        Mode = if ($OptionalAppsOnly) { 'Optional apps only' } else { 'Full setup' }
+        Status = $status
+        ExitCode = if ($failed) { 1 } else { 0 }
+        Records = $records
+        Problems = $problems
+    }
+}
+
 function Write-SummaryReport {
-    param([string]$DesktopPath)
+    param([string]$DesktopPath, [Parameter(Mandatory)][object]$Result)
 
     $summaryPath = Join-Path $DesktopPath "Setup Summary.txt"
-    $summaryLines = @(
+    $lines = @(
         "Declarative Windows Setup Summary",
-        "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+        "Run started: $($Result.StartedAt)",
+        "Mode: $($Result.Mode)",
+        "Result: $($Result.Status)",
         ""
     )
-
-    foreach ($item in $SummaryItems) {
-        $statusSymbol = switch ($item.Status) {
-            "OK" { "✓" }
-            "WARN" { "⚠" }
-            "FAIL" { "✗" }
-            default { $item.Status }
-        }
-        $summaryLines += "{0} {1}: {2}" -f $statusSymbol, $item.Step, $item.Message
+    foreach ($record in $Result.Records) {
+        $scope = if ($record.Included) { 'Included' } else { 'Not selected this run' }
+        $lines += "{0}: {1} - {2} [{3}; {4}]" -f $record.Step, $record.Status, $record.Message, $record.Origin, $scope
     }
-
-    Set-Content -Path $summaryPath -Value $summaryLines -Force
+    foreach ($problem in $Result.Problems) {
+        $lines += "{0} {1}: {2} - {3}" -f $problem.Status, $problem.Category, $problem.Item, $problem.Reason
+    }
+    Set-Content -LiteralPath $summaryPath -Value $lines -Force -ErrorAction Stop
     return $summaryPath
 }
 
 function Add-FailedItem {
     param(
-        [Parameter(Mandatory)]
-        [string]$Category,
-
-        [Parameter(Mandatory)]
-        [string]$Item,
-
-        [string]$Reason = ""
+        [Parameter(Mandatory)][string]$Category,
+        [Parameter(Mandatory)][string]$Item,
+        [string]$Reason = "",
+        [ValidateSet('FAIL', 'WARN')][string]$Status = 'FAIL'
     )
 
     $FailedItems.Add([pscustomobject]@{
         Category = $Category
-        Item     = $Item
-        Reason   = $Reason
+        Item = $Item
+        Reason = $Reason
+        Status = $Status
     })
 }
 
 function Write-FailedInstallsReport {
-    param([string]$DesktopPath)
+    param([string]$DesktopPath, [Parameter(Mandatory)][object]$Result)
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $lines = @(
-        "Failed Installs - $timestamp",
-        "========================================"
+        "Setup failures and warnings",
+        "Run started: $($Result.StartedAt)",
+        "Mode: $($Result.Mode)",
+        "Result: $($Result.Status)",
+        ""
     )
-
-    if ($FailedItems.Count -eq 0) {
-        $lines += ""
-        $lines += "No failures recorded. Everything installed successfully."
+    if ($Result.Problems.Count -eq 0) {
+        $lines += "No failures or warnings in the selected steps. See Setup Summary.txt for skipped and previous results."
     }
     else {
-        $categories = $FailedItems | Select-Object -ExpandProperty Category -Unique
-        foreach ($category in $categories) {
-            $lines += ""
-            $lines += "${category}:"
-            foreach ($entry in ($FailedItems | Where-Object { $_.Category -eq $category })) {
-                $detail = if ($entry.Reason) { " - $($entry.Reason)" } else { "" }
-                $lines += "  - $($entry.Item)$detail"
-            }
+        foreach ($problem in $Result.Problems) {
+            $lines += "{0} {1}: {2} - {3}" -f $problem.Status, $problem.Category, $problem.Item, $problem.Reason
         }
-        $lines += ""
-        $lines += "========================================"
-        $lines += "Review the items above and install/apply them manually."
     }
-
-    $lines | Set-Content -Path $FailedInstallsLog -Force
-
+    $lines | Set-Content -LiteralPath $FailedInstallsLog -Force -ErrorAction Stop
     if ($DesktopPath) {
         $desktopReport = Join-Path $DesktopPath "Failed Installs.txt"
-        $lines | Set-Content -Path $desktopReport -Force
+        $lines | Set-Content -LiteralPath $desktopReport -Force -ErrorAction Stop
         return $desktopReport
     }
-
     return $FailedInstallsLog
+}
+
+function Complete-BootstrapRun {
+    param([string]$DesktopPath, [string]$FailureMessage = "")
+
+    $result = Get-BootstrapRunResult -FailureMessage $FailureMessage
+    if (-not $DryRun) {
+        try {
+            $null = Write-FailedInstallsReport -DesktopPath $DesktopPath -Result $result
+            $null = Write-SummaryReport -DesktopPath $DesktopPath -Result $result
+        }
+        catch {
+            $reportFailure = "Report generation failed: $($_.Exception.Message)"
+            Write-Log $reportFailure -Level ERROR
+            $result = Get-BootstrapRunResult -FailureMessage (($FailureMessage, $reportFailure | Where-Object { $_ }) -join '; ')
+            # Correct any report that was written before the other destination failed.
+            foreach ($writer in @('Write-FailedInstallsReport', 'Write-SummaryReport')) {
+                try {
+                    $null = & $writer -DesktopPath $DesktopPath -Result $result
+                }
+                catch {
+                    Write-Log "Cannot publish corrected report: $($_.Exception.Message)" -Level ERROR
+                }
+            }
+        }
+    }
+    $level = if ($result.ExitCode) { 'ERROR' } elseif ($result.Status -eq 'Completed') { 'SUCCESS' } else { 'WARNING' }
+    Write-Log "Windows Setup Bootstrap - $($result.Status)" -Level $level
+    Update-SetupProgress -Phase $result.Status -Status "Windows setup bootstrap: $($result.Status)" -ResetPackage -Mode 'admin'
+    return $result
 }
 
 function Invoke-BootstrapRunStep {

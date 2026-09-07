@@ -429,7 +429,7 @@ function Invoke-WingetManifestInstall {
 
             if ($unverified) {
                 $unverifiedPackages.Add($packageId)
-                Add-FailedItem -Category "$SummaryStep Verification" -Item $packageId -Reason "WinGet reported success but winget list did not verify the package"
+                Add-FailedItem -Category "$SummaryStep Verification" -Item $packageId -Reason "WinGet reported success but winget list did not verify the package" -Status WARN
                 Write-Log "WARNING: $packageId install reported success, but winget list did not verify it" -Level WARNING
                 continue
             }
@@ -455,7 +455,7 @@ function Invoke-WingetManifestInstall {
 
             if ($unverifiedCount -gt 0) {
                 Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message "Installed $($installedPackages.Count) package(s); $unverifiedCount verification warning(s)"
-                Set-StepState -StepId $StepId -Status "done" -Message "Installed with $unverifiedCount verification warning(s)"
+                Set-StepState -StepId $StepId -Status "unverified" -Message "Installed with $unverifiedCount verification warning(s)"
             }
             else {
                 Add-SummaryItem -Step $SummaryStep -Status "OK" -Message "Installed $($installedPackages.Count) package(s)"
