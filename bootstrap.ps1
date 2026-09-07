@@ -63,6 +63,12 @@ $SophiaDownloadUrl = "https://github.com/farag2/Sophia-Script-for-Windows/releas
 $FailedInstallsLog = Join-Path $SetupPath "failed-installs.log"
 $StepIds = @("winget", "repo", "sophia", "postInstallTweaks", "registry", "shortcut", "restoreShortcut", "optionalShortcut", "optionalWinget", "summary")
 $SetupState = $null
+$RunStartedAt = (Get-Date).ToString('o')
+$RunStepIds = @($StepIds | Where-Object { $_ -notin @('summary', 'optionalWinget') })
+if ($OptionalAppsOnly) { $RunStepIds = @('optionalWinget') }
+if ($ConfigRoot.TrimEnd('\') -ne $SetupPath.TrimEnd('\')) {
+    $RunStepIds = @($RunStepIds | Where-Object { $_ -ne 'repo' })
+}
 $SummaryItems = [System.Collections.Generic.List[object]]::new()
 $FailedItems = [System.Collections.Generic.List[object]]::new()
 $script:BackupManifestPath = $null
@@ -1043,8 +1049,8 @@ function Set-RegistryValueSafe {
         [string]$Type
     )
 
-    if (-not (Test-Path $Path)) {
-        New-Item -Path $Path -Force | Out-Null
+    if (-not (Test-Path $Path -ErrorAction Stop)) {
+        New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
     }
 
     if ($Type -eq "DWord") {
@@ -1057,17 +1063,23 @@ function Set-RegistryValueSafe {
     }
 
     if ($Name -eq "(Default)") {
-        Set-Item -Path $Path -Value $typedValue -Force
+        Set-Item -Path $Path -Value $typedValue -Force -ErrorAction Stop
         return
     }
 
-    New-ItemProperty -Path $Path -Name $Name -Value $typedValue -PropertyType $propertyType -Force | Out-Null
+    New-ItemProperty -Path $Path -Name $Name -Value $typedValue -PropertyType $propertyType -Force -ErrorAction Stop | Out-Null
 }
 
 function Remove-ProvisionedAppIfPresent {
     param([Parameter(Mandatory)][string]$DisplayName)
 
-    $matches = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $DisplayName }
+    try {
+        $matches = Get-AppxProvisionedPackage -Online -ErrorAction Stop | Where-Object { $_.DisplayName -eq $DisplayName }
+    }
+    catch {
+        Add-FailedItem -Category "Post-Install Tweaks" -Item $DisplayName -Reason $_.Exception.Message
+        return $false
+    }
     if (-not $matches) {
         Write-Log "Provisioned app not present: $DisplayName" -Level INFO
         return $true
@@ -1095,8 +1107,9 @@ function Disable-OptionalFeatureIfPresent {
         $feature = Get-WindowsOptionalFeature -Online -FeatureName $FeatureName -ErrorAction Stop
     }
     catch {
-        Write-Log "Optional feature not found or unavailable: $FeatureName" -Level INFO
-        return $true
+        Write-Log "Cannot check optional feature ${FeatureName}: $($_.Exception.Message)" -Level WARNING
+        Add-FailedItem -Category "Post-Install Tweaks" -Item $FeatureName -Reason $_.Exception.Message
+        return $false
     }
 
     if ($feature.State -in @("Disabled", "DisabledWithPayloadRemoved")) {
@@ -1142,7 +1155,7 @@ function Invoke-PostInstallTweaks {
     try {
         Set-RegistryValueSafe -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Communications" -Name "ConfigureChatAutoInstall" -Value 0 -Type DWord
         Set-RegistryValueSafe -Path "HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\Start" -Name "ConfigureStartPins" -Value '{"pinnedList":[]}' -Type String
-        Set-RegistryValueSafe -Path "HKU:\.DEFAULT\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "10" -Type String
+        Set-RegistryValueSafe -Path "Registry::HKEY_USERS\.DEFAULT\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "10" -Type String
 
         Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "HideFileExt" -Value 0 -Type DWord
         Set-RegistryValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Hidden" -Value 1 -Type DWord
@@ -1338,15 +1351,13 @@ try {
 
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
-        Write-Log "ERROR: This script must be run as Administrator" -Level ERROR
-        exit 1
+        throw "This script must be run as Administrator"
     }
 
     Write-Log "Administrator privileges verified" -Level SUCCESS
 
     if (-not (Test-Path $SetupPath)) {
-        Write-Log "ERROR: Setup directory not found at $SetupPath" -Level ERROR
-        exit 1
+        throw "Setup directory not found at $SetupPath"
     }
 
     $SetupState = Initialize-State -StatePath $StateFile -StepIds $StepIds
@@ -1678,46 +1689,14 @@ try {
         }
 
         if ($installOptionalApps) {
+            if ('optionalWinget' -notin $RunStepIds) { $RunStepIds += 'optionalWinget' }
             $null = Invoke-WingetManifestInstall -ManifestPath $OptionalAppsJson -StepId $stepId -SummaryStep "Optional Apps" -MarkerPath $OptionalWingetMarker -ManifestLabel "optional-apps.json" -MissingManifestMessage "optional-apps.json not found"
         }
     }
 
-    $stepId = "summary"
-    if (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 10: Skipping summary report (already completed)" -Level INFO
-    }
-    elseif ($DryRun) {
-        Write-Log "Step 10: Dry run - skipping summary report" -Level WARNING
-        Set-StepState -StepId $stepId -Status "pending" -Message "Dry run: summary skipped"
-    }
-    else {
-        try {
-            $failedReportPath = Write-FailedInstallsReport -DesktopPath $desktopPath
-            if ($FailedItems.Count -gt 0) {
-                Write-Log "Failed installs report written to $failedReportPath ($($FailedItems.Count) item(s))" -Level WARNING
-            }
-            else {
-                Write-Log "No failed installs - report written to $failedReportPath" -Level SUCCESS
-            }
+    $runResult = Complete-BootstrapRun -DesktopPath $desktopPath
 
-            $summaryPath = Write-SummaryReport -DesktopPath $desktopPath
-            Write-Log "Summary report written to $summaryPath" -Level SUCCESS
-            Set-StepState -StepId $stepId -Status "done" -Message "Summary report written"
-        }
-        catch {
-            Write-Log "WARNING: Failed to write summary report: $($_.Exception.Message)" -Level WARNING
-            Set-StepState -StepId $stepId -Status "failed" -Message "Summary report failed"
-        }
-    }
-
-    Write-Log "========================================" -Level INFO
-    Write-Log "Windows Setup Bootstrap - Completed" -Level SUCCESS
-    Write-Log "========================================" -Level INFO
-    Write-Log "Log file saved to: $LogFile" -Level INFO
-
-    Update-SetupProgress -Phase 'Completed' -Status 'Windows setup bootstrap completed' -CurrentPackage '' -PackageIndex 0 -PackageTotal 0 -Mode 'admin'
-
-    if ($PromptRestart) {
+    if ($PromptRestart -and -not $DryRun) {
         $restartResponse = Read-Host "Restart now? (Y/N)"
         if ($restartResponse -match '^(y|yes)$') {
             Write-Log "Restarting system..." -Level WARNING
@@ -1731,6 +1710,8 @@ try {
 catch {
     Write-Log "FATAL ERROR: $($_.Exception.Message)" -Level ERROR
     Write-Log "Stack Trace: $($_.ScriptStackTrace)" -Level ERROR
-    Update-SetupProgress -Phase 'Failed' -Status $_.Exception.Message -CurrentPackage '' -PackageIndex 0 -PackageTotal 0 -Mode 'admin'
+    $null = Complete-BootstrapRun -DesktopPath ([Environment]::GetFolderPath("Desktop")) -FailureMessage $_.Exception.Message
     exit 1
 }
+
+exit $runResult.ExitCode
