@@ -4,10 +4,20 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 
 ## Prerequisites
 
-- Windows 11 (25H2 or later) ISO
-- Windows ADK **or** a direct `oscdimg.exe` download URL
+- Windows 11 24H2 or later amd64 ISO. Every selectable edition must be a client image with version 10.0, build 26100 or later, and DISM architecture 9. Server, ARM64, older releases, and missing or invalid metadata are rejected before staging.
+- [Windows ADK Deployment Tools](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install), including Windows System Image Manager and `oscdimg.exe`. Use the current compatible ADK and servicing patch listed by Microsoft for your host and target Windows release.
 - Administrator privileges
 - Free space for the expanded source files plus selected payload in both TEMP and the output location. The builder measures inputs before staging and combines the estimates when both locations share a volume. Filesystem and ISO metadata overhead and concurrent disk use can still exhaust space during a build.
+
+The builder requires the Windows SIM schema DLL to validate `autounattend.xml` before staging. A standalone `oscdimg.exe` download cannot replace this prerequisite. The validator reports a missing schema before mounting the ISO; after schema and policy checks, it reads each image's detailed metadata. Disk and partition selection remain manual.
+
+From an elevated PowerShell session, check the installed prerequisites and source image before building:
+
+```powershell
+.\validate-unattend.ps1 -UnattendPath .\autounattend.xml -SourceISO "Win11_English_x64.iso"
+```
+
+This must complete successfully. The validator's `-SchemaDllPath` option supports a schema DLL at a nonstandard location for standalone validation; `build-iso.ps1` uses the standard ADK locations. Install Deployment Tools in the standard location for the build command below. The release boundary follows [Microsoft's Windows 11 release information](https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information).
 
 ## Basic Usage
 
@@ -32,7 +42,7 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 - `-OutputISO` (required): New path for the generated ISO. Existing files and directories are rejected before staging. The output is published only after oscdimg succeeds, without replacing files created by another process.
 - `-SourceIsoHash` (optional): Expected SHA256 hash for the source ISO.
 - `-IsoLabel` (optional): ISO label passed to `oscdimg`.
-- `-OscdimgDownloadUrl` (optional): Direct URL to `oscdimg.exe` or a ZIP containing it.
+- `-OscdimgDownloadUrl` (optional): Direct URL to `oscdimg.exe` or a ZIP containing it, used only if an installed copy is not found. It does not supply Windows SIM or bypass schema validation; ADK Deployment Tools remain required.
 - `-KeepTemp` (optional): Retain temporary extraction files for debugging.
 
 ## ISO Contents

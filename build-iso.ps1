@@ -24,7 +24,8 @@
 
 .NOTES
     Requirements:
-    - Windows ADK (for oscdimg.exe) - https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
+    - Windows ADK Deployment Tools including Windows SIM and oscdimg.exe
+      https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
     - Administrator privileges
     - Free space for the measured staging and output estimates
 #>
@@ -179,8 +180,9 @@ function Find-OscdImg {
     Write-ErrorMessage "oscdimg.exe not found!"
     Write-Host "`nPlease install Windows ADK from:" -ForegroundColor Yellow
     Write-Host "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -ForegroundColor Yellow
-    Write-Host "`nOr provide a direct download URL with -OscdimgDownloadUrl" -ForegroundColor Yellow
-    throw "Windows ADK is required to build ISO files."
+    Write-Host "`nInstall Deployment Tools including Windows System Image Manager and oscdimg.exe." -ForegroundColor Yellow
+    Write-Host "-OscdimgDownloadUrl supplies only oscdimg.exe; the Windows SIM schema is still required." -ForegroundColor Yellow
+    throw "Windows ADK Deployment Tools are required to validate and build ISO files."
 }
 
 

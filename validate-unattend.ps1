@@ -50,7 +50,7 @@ function Find-UnattendSchemaDll {
         }
     }
 
-    throw "Windows SIM schema DLL not found. Install the Windows ADK Deployment Tools + Windows System Image Manager, or pass -SchemaDllPath."
+    throw "Windows SIM schema DLL not found. Install Windows ADK Deployment Tools including Windows System Image Manager, or pass -SchemaDllPath to this validator. A standalone oscdimg.exe download does not provide the required schema."
 }
 
 function Get-UnattendSchemaString {
@@ -182,6 +182,22 @@ function Test-SourceIsoImage {
         $imageInfo = Get-WindowsImage -ImagePath $imagePath -ErrorAction Stop
         if (-not $imageInfo) {
             throw "Unable to read Windows image metadata from $imagePath."
+        }
+
+        # Setup leaves edition selection open, so every offered image must be supported.
+        foreach ($image in $imageInfo) {
+            $details = Get-WindowsImage -ImagePath $imagePath -Index $image.ImageIndex -ErrorAction Stop
+            $version = $null
+            if (-not $details -or -not [version]::TryParse([string]$details.Version, [ref]$version)) {
+                throw "Missing or invalid Windows version metadata for image index $($image.ImageIndex)."
+            }
+
+            # Windows 11 24H2 starts at build 26100; DISM architecture 9 is amd64.
+            if ($details.InstallationType -ne 'Client' -or
+                $version.Major -ne 10 -or $version.Minor -ne 0 -or $version.Build -lt 26100 -or
+                $details.Architecture -ne 9) {
+                throw "Unsupported source image index $($image.ImageIndex) ($($image.ImageName)): version=$version, architecture=$($details.Architecture), installation type=$($details.InstallationType). Require Windows 11 24H2 or later, amd64 client images."
+            }
         }
 
         $editionNames = @($imageInfo | Select-Object -ExpandProperty ImageName)
