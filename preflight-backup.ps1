@@ -376,6 +376,7 @@ foreach ($path in @($filesRoot, $repoFilesRoot, $exportsRoot, $reportsRoot)) {
 }
 
 $manifestRules = New-Object System.Collections.Generic.List[object]
+$verifiedFiles = New-Object System.Collections.Generic.List[object]
 $failedRules = New-Object System.Collections.Generic.List[object]
 $totalRuleCount = @($rules).Count
 $currentRuleIndex = 0
@@ -393,6 +394,13 @@ foreach ($rule in $rules) {
 
     $ruleDestination = Join-Path $filesRoot $rule.id
     $copyResult = Copy-DirectoryWithRobocopy -Source $rule.source -Destination $ruleDestination -ExcludePatterns $excludePatterns
+    if ($VerifyHashes -and $copyResult.Success -and -not $WhatIfPreference) {
+        foreach ($file in Get-BackupTreeFiles $ruleDestination) {
+            $relativePath = Get-RelativePath -Path $file.FullName -BasePath $ruleDestination
+            $sourceFile = Resolve-ContainedBackupPath -Path $relativePath -Root $rule.source
+            $verifiedFiles.Add((Get-VerifiedBackupFile -Path $file.FullName -BackupRoot $sessionRoot -Source $sourceFile))
+        }
+    }
 
     $manifestRules.Add([pscustomobject]@{
         id = $rule.id
@@ -436,8 +444,10 @@ foreach ($repoFile in $repoFiles) {
         backupPath = Get-RelativePath -Path $destination -BasePath $sessionRoot
     }
 
-    if ($VerifyHashes -and (Test-Path $destination)) {
-        $entry.sha256 = (Get-FileHash -Path $destination -Algorithm SHA256).Hash
+    if ($VerifyHashes -and -not $WhatIfPreference) {
+        $verifiedFile = Get-VerifiedBackupFile -Path $destination -BackupRoot $sessionRoot -Source $repoFile.source
+        $entry.sha256 = $verifiedFile.sha256
+        $verifiedFiles.Add($verifiedFile)
     }
 
     $manifestRepoFiles.Add([pscustomobject]$entry)
@@ -449,6 +459,18 @@ $wingetExportPath = Join-Path $exportsRoot "apps.json"
 Write-Progress -Activity "Exporting WinGet inventory" -Status "Running winget export" -PercentComplete 0
 $wingetExported = Export-WingetInventory -OutputPath $wingetExportPath
 Write-Progress -Activity "Exporting WinGet inventory" -Completed
+
+$verification = $null
+if ($VerifyHashes -and -not $WhatIfPreference) {
+    foreach ($file in Get-BackupTreeFiles $exportsRoot) {
+        $verifiedFiles.Add((Get-VerifiedBackupFile -Path $file.FullName -BackupRoot $sessionRoot))
+    }
+    $verification = [ordered]@{
+        algorithm = 'SHA256'
+        status = if ($failedRules.Count -gt 0) { 'failed' } else { 'verified' }
+        files = $verifiedFiles.ToArray()
+    }
+}
 
 $manifest = New-BackupManifest `
     -Machine ([ordered]@{
@@ -479,7 +501,8 @@ $manifest = New-BackupManifest `
         wingetPath = if ($wingetExported) { $wingetExportPath } else { $null }
     }) `
     -Failures $failedRules.ToArray() `
-    -RestoreTargets (Get-RestoreTargetMap $config)
+    -RestoreTargets (Get-RestoreTargetMap $config) `
+    -Verification $verification
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 8
 if ($PSCmdlet.ShouldProcess($ManifestPath, "Write backup manifest")) {
