@@ -27,6 +27,8 @@ Describe "canonical repo file restore" {
     BeforeEach {
         $caseRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString())
         $CanonicalRepoPath = Join-Path $caseRoot 'canonical'
+        $SetupPath = Join-Path $caseRoot 'staged'
+        $ConfigRoot = $SetupPath
         $session = Join-Path $caseRoot 'selected-session'
         New-Item -ItemType Directory -Path (Join-Path $session 'repo-files') -Force | Out-Null
         $script:BackupManifestPath = Join-Path $session 'backup-manifest.json'
@@ -76,6 +78,18 @@ Describe "canonical repo file restore" {
         $fixtureManifest.repoFiles = @()
         Restore-RepoFilesFromManifest -Manifest $fixtureManifest | Should -BeTrue
         Restore-RepoFilesFromManifest -Manifest $null | Should -BeFalse
+    }
+
+    It "preserves repo edits when running with non-staged configuration" {
+        $ConfigRoot = $CanonicalRepoPath
+        $OptionalAppsOnly = $false
+        New-Item -ItemType Directory -Path $CanonicalRepoPath -Force | Out-Null
+        $editedPath = Join-Path $CanonicalRepoPath 'apps.json'
+        Set-Content -LiteralPath $editedPath -Value 'edited configuration'
+        Mock Get-BackupManifestData { throw 'Must not load a backup for a repo configuration rerun' }
+        . $runRepoStep
+        Get-Content -LiteralPath $editedPath | Should -Be 'edited configuration'
+        Should -Invoke Get-BackupManifestData -Times 0
     }
 
     It "keeps incomplete repo restoration retryable and marks it done after a successful retry" {
