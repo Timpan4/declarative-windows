@@ -91,7 +91,7 @@ Describe "ISO payload selection" {
             'autounattend.xml', 'bootstrap.ps1', 'apps.json', 'Sophia-Preset.ps1',
             'restore-backup.ps1', 'apply-registry.ps1', 'modules\BootstrapRun.ps1',
             'modules\WinGetInstall.ps1', 'modules\BackupManifest.ps1',
-            'modules\StagedSetupPayload.ps1', 'modules\DeclarativeConfig.ps1',
+            'modules\DeclarativeConfig.ps1',
             'modules\Run-SophiaPreset.ps1', 'config\registry.json', 'config\backup.template.json'
         )) {
             $file = Join-Path $project $relative
@@ -101,7 +101,7 @@ Describe "ISO payload selection" {
     }
 
     It "stages required files and excludes unrelated and ignored files" {
-        foreach ($relative in @('config\backup.json', 'config\restore.json', 'config\secret-personal.json', 'config\unrelated.txt', 'modules\unrelated.txt')) {
+        foreach ($relative in @('config\backup.json', 'config\restore.json', 'config\secret-personal.json', 'config\unrelated.txt', 'modules\unrelated.txt', 'modules\StagedSetupPayload.ps1')) {
             [IO.File]::WriteAllText((Join-Path $project $relative), 'excluded fixture')
         }
         $payload = @(Get-IsoSetupPayload -ProjectRoot $project)
@@ -112,6 +112,7 @@ Describe "ISO payload selection" {
         Test-Path -LiteralPath (Join-Path $setup 'modules\Run-SophiaPreset.ps1') | Should -BeTrue
         @(Get-ChildItem -LiteralPath (Join-Path $setup 'config') -File).Count | Should -Be 2
         Test-Path -LiteralPath (Join-Path $setup 'modules\unrelated.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $setup 'modules\StagedSetupPayload.ps1') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $setup 'optional-apps.json') | Should -BeFalse
     }
 
@@ -151,6 +152,11 @@ Describe "ISO build preflight" {
         { Get-IsoOutputPath -SourceISO $source -OutputISO $TestDrive } | Should -Throw '*already exists*'
     }
 
+    It "rejects an alternate data stream of the source" {
+        { Get-IsoOutputPath -SourceISO $source -OutputISO ($source + ':output.iso') } | Should -Throw '*Invalid ISO output filename*'
+        [IO.File]::ReadAllText($source) | Should -Be 'original source'
+        @(Get-Item -LiteralPath $source -Stream 'output.iso' -ErrorAction SilentlyContinue).Count | Should -Be 0
+    }
     It "rejects a parent that is a file" {
         { Get-IsoOutputPath -SourceISO $source -OutputISO (Join-Path $source 'output.iso') } | Should -Throw '*Cannot create ISO output*'
         [IO.File]::ReadAllText($source) | Should -Be 'original source'

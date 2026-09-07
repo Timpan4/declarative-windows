@@ -322,8 +322,8 @@ try {
     [IO.File]::Move($pendingOutput, $outputPath)
 
     # Verify output file was created
-    if (Test-Path $outputPath) {
-        $fileSize = (Get-Item $outputPath).Length / 1GB
+    if (Test-Path -LiteralPath $outputPath) {
+        $fileSize = (Get-Item -LiteralPath $outputPath).Length / 1GB
         Write-Success "Output ISO created: $outputPath"
         Write-Info "File size: $($fileSize.ToString('F2')) GB"
     }

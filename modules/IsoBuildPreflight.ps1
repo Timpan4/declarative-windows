@@ -12,6 +12,10 @@ function Get-IsoOutputPath {
     if ($provider.Name -ne 'FileSystem') {
         throw "ISO output must be a filesystem path: $OutputISO"
     }
+    $fileName = [IO.Path]::GetFileName($outputPath)
+    if ($fileName.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+        throw "Invalid ISO output filename: $fileName"
+    }
     $sourcePath = (Get-Item -LiteralPath $SourceISO -ErrorAction Stop).FullName
     if ($outputPath -eq $sourcePath) {
         throw "Source and output ISO must be different files: $outputPath"
