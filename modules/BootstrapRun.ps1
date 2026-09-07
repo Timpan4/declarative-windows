@@ -102,6 +102,12 @@ function Set-StepState {
 function Should-RunStep {
     param([string]$StepId)
 
+    # These actions reconcile their inputs against package inventory, the preset
+    # hash, or current registry values. A saved status cannot replace those checks.
+    if ($StepId -in @('winget', 'optionalWinget', 'sophia', 'registry')) {
+        return $true
+    }
+
     if ($Force) {
         return $true
     }
