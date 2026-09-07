@@ -69,6 +69,8 @@ function Save-State {
         [string]$StatePath
     )
 
+    if ($DryRun) { return }
+
     $State.lastUpdated = (Get-Date).ToString("o")
     $State | ConvertTo-Json -Depth 6 | Set-Content -Path $StatePath -Force
 }
@@ -84,6 +86,8 @@ function Set-StepState {
         [Parameter(Mandatory)]
         [string]$Message
     )
+
+    if ($DryRun) { return }
 
     if (-not $SetupState.steps.Contains($StepId)) {
         $SetupState.steps[$StepId] = [pscustomobject]@{
@@ -120,6 +124,11 @@ function Should-RunStep {
         return $true
     }
 
+    # Older runs incorrectly completed this step when the optional input was absent.
+    if ($StepId -eq 'optionalShortcut' -and $SetupState.steps[$StepId].message -eq 'optional-apps.json not found') {
+        return $true
+    }
+
     return $SetupState.steps[$StepId].status -ne "done"
 }
 
@@ -133,6 +142,8 @@ function Update-SetupProgress {
         [string]$Mode,
         [switch]$ResetPackage
     )
+
+    if ($DryRun) { return }
 
     if ($PSBoundParameters.ContainsKey('Phase')) {
         $script:ProgressState.phase = $Phase
