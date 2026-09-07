@@ -107,7 +107,7 @@ if ($backupJsonEntry) {
     }
 
     if (-not $restoreBackupJson) {
-        Write-Host "Skipping config\backup.json restore — customize from backup.template.json on the new machine"
+        Write-Host "Skipping config\backup.json restore. Customize from backup.template.json on the new machine"
         # Remove from list so it's not processed in the loop below
         $manifest.repoFiles = [array]($manifest.repoFiles | Where-Object { $_.relativePath -ne "config\backup.json" })
     }
