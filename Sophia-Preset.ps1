@@ -4,14 +4,14 @@
 
 	.DESCRIPTION
 	This preset file contains customized Windows 11 tweaks and configurations.
-	Verified against Sophia Script v7.1.4 for Windows 11.
+	Bootstrap uses Sophia 7.3.0 for Windows 11 25H2 or later.
 
 	This preset handles ALL UI tweaks, registry customizations, and OS settings.
 	AutoUnattend.xml only handles installation-time tasks (manual disk selection flow, bloatware removal).
 
 	.NOTES
-	Tested with: Sophia Script v7.1.4
-	Windows 11: 24H2 or later
+	Validate the pinned Sophia version in a disposable Windows VM before rollout.
+	Windows 11: 25H2 or later
 	Reference: SOPHIA-FUNCTIONS-REFERENCE.md
 
 	.LINK
@@ -20,8 +20,8 @@
 	USAGE:
 	1. Download Sophia Script for Windows 11 from GitHub releases
 	2. Extract the archive
-	3. Copy this preset file into the extracted Sophia Script folder
-	4. Run: .\Sophia.ps1 -Preset .\Sophia-Preset.ps1
+	3. Run bootstrap.ps1 from this repository in an elevated Windows PowerShell session.
+	   Bootstrap initializes the pinned framework and runs this preset through modules\Run-SophiaPreset.ps1.
 #>
 
 #region Privacy & Telemetry
@@ -187,11 +187,6 @@ Autoplay -Disable
 # WindowsCapabilities -Install -Names "NetFx3~~~~"
 #endregion Windows Features
 
-#region Start Menu
-# Use default Start layout (removes pins)
-StartLayout -Default
-#endregion Start Menu
-
 #region UWP Apps
 # Uninstall bloatware UWP apps using pop-up dialog
 # UninstallUWPApps
@@ -246,17 +241,11 @@ MSIExtractContext -Show
 # Show "Install" in .cab context menu
 CABInstallContext -Show
 
-# Hide "Edit with Clipchamp" from media files
-EditWithClipchampContext -Hide
-
-# Show "Open in Windows Terminal" in folders
-OpenWindowsTerminalContext -Show
-
 # Note: Classic context menu is handled by AutoUnattend.xml (registry tweak)
 #endregion Context Menu
 
 <#
-	VERIFIED AGAINST: Sophia Script v7.1.4
+	FRAMEWORK: Sophia Script 7.3.0 for Windows 11 25H2+
 	REFERENCE: SOPHIA-FUNCTIONS-REFERENCE.md
 
 	DIVISION OF RESPONSIBILITIES:
