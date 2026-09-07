@@ -22,8 +22,13 @@ param(
     [switch]$Force,
     [switch]$PromptRestart,
     [switch]$OptionalAppsOnly,
-    [string]$ConfigRoot = $PSScriptRoot
+    [string]$ConfigRoot = $PSScriptRoot,
+    [string]$ExpectedUserSid
 )
+
+if ($ExpectedUserSid -and [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $ExpectedUserSid) {
+    throw 'Run this setup shortcut as the user who created it. Elevating with another account would configure that account instead.'
+}
 
 $ErrorActionPreference = "Continue"
 $SetupPath = "C:\Setup"
@@ -1011,6 +1016,11 @@ function New-DesktopShortcut {
     $shortcut.WorkingDirectory = $WorkingDirectory
     $shortcut.Description = $Description
     $shortcut.Save()
+
+    # MS-SHLLINK LinkFlags.RunAsUser requests elevation when Explorer opens the link.
+    $shortcutBytes = [IO.File]::ReadAllBytes($ShortcutPath)
+    $shortcutBytes[0x15] = $shortcutBytes[0x15] -bor 0x20
+    [IO.File]::WriteAllBytes($ShortcutPath, $shortcutBytes)
 }
 
 function Set-RegistryValueSafe {
@@ -1551,7 +1561,7 @@ try {
         try {
             $shortcutPath = Join-Path $desktopPath "Run Windows Setup.lnk"
             $bootstrapTarget = Get-RunBootstrapTarget
-            New-DesktopShortcut -ShortcutPath $shortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$bootstrapTarget`"" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Re-run declarative Windows setup"
+            New-DesktopShortcut -ShortcutPath $shortcutPath -TargetPath "powershell.exe" -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapTarget`" -ConfigRoot `"$ConfigRoot`" -ExpectedUserSid $([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Re-run declarative Windows setup"
 
             Add-SummaryItem -Step "Shortcut" -Status "OK" -Message "Run Windows Setup.lnk created"
             Set-StepState -StepId $stepId -Status "done" -Message "Shortcut created"
@@ -1584,7 +1594,7 @@ try {
     else {
         try {
             $restoreShortcutPath = Join-Path $desktopPath "Restore My Files.lnk"
-            New-DesktopShortcut -ShortcutPath $restoreShortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$RestoreScript`"" -WorkingDirectory $SetupPath -Description "Restore backed up files after Windows reinstall"
+            New-DesktopShortcut -ShortcutPath $restoreShortcutPath -TargetPath "powershell.exe" -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$RestoreScript`" -DestinationProfileRoot `"$env:USERPROFILE`"" -WorkingDirectory $SetupPath -Description "Restore backed up files after Windows reinstall"
 
             Add-SummaryItem -Step "Restore" -Status "OK" -Message "Restore My Files.lnk created"
             Set-StepState -StepId $stepId -Status "done" -Message "Restore shortcut created"
@@ -1618,7 +1628,7 @@ try {
         try {
             $optionalShortcutPath = Join-Path $desktopPath "Install Optional Apps.lnk"
             $bootstrapTarget = Get-RunBootstrapTarget
-            New-DesktopShortcut -ShortcutPath $optionalShortcutPath -TargetPath "powershell.exe" -Arguments "-ExecutionPolicy Bypass -File `"$bootstrapTarget`" -OptionalAppsOnly" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Install optional declarative Windows apps later"
+            New-DesktopShortcut -ShortcutPath $optionalShortcutPath -TargetPath "powershell.exe" -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapTarget`" -OptionalAppsOnly -ConfigRoot `"$ConfigRoot`" -ExpectedUserSid $([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)" -WorkingDirectory (Split-Path -Path $bootstrapTarget -Parent) -Description "Install optional declarative Windows apps later"
 
             Add-SummaryItem -Step "Optional Apps Shortcut" -Status "OK" -Message "Install Optional Apps.lnk created"
             Set-StepState -StepId $stepId -Status "done" -Message "Optional apps shortcut created"

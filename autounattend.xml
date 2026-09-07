@@ -21,7 +21,7 @@
                 <SynchronousCommand wcm:action="add">
                     <Order>1</Order>
                     <Description>Run Windows Setup Bootstrap Script</Description>
-                    <CommandLine>powershell.exe -ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1</CommandLine>
+                    <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Setup\bootstrap.ps1</CommandLine>
                 </SynchronousCommand>
             </FirstLogonCommands>
         </component>
