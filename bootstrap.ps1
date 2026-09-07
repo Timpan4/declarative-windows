@@ -1210,26 +1210,48 @@ function Ensure-CanonicalRepo {
 }
 
 function Restore-RepoFilesFromManifest {
-    param([object]$Manifest)
+    param(
+        [object]$Manifest,
+        [string]$ManifestPath = $script:BackupManifestPath
+    )
 
-    if (-not $Manifest -or -not $Manifest.repoFiles) {
+    if (-not $Manifest) {
         return $false
     }
 
-    $restored = $false
+    if (-not $Manifest.repoFiles) {
+        return $true
+    }
+
+    try {
+        $actualBackupRoot = Split-Path -Parent (Resolve-Path -LiteralPath $ManifestPath -ErrorAction Stop).Path
+        $manifestBackupRoot = Get-BackupManifestRoot -Manifest $Manifest
+    }
+    catch {
+        Write-Log "Cannot resolve the selected backup manifest: $($_.Exception.Message)" -Level WARNING
+        return $false
+    }
+
+    $restored = $true
     foreach ($repoFile in $Manifest.repoFiles) {
-        if (-not (Test-Path $repoFile.backupPath)) {
-            continue
-        }
+        try {
+            $source = Resolve-BackupSourcePath -Path $repoFile.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+                throw "Backup source file is missing: $source"
+            }
 
-        $destination = Join-Path $CanonicalRepoPath $repoFile.relativePath
-        $destinationParent = Split-Path -Path $destination -Parent
-        if (-not (Test-Path $destinationParent)) {
-            New-Item -Path $destinationParent -ItemType Directory -Force | Out-Null
-        }
+            $destination = Join-Path $CanonicalRepoPath $repoFile.relativePath
+            $destinationParent = Split-Path -Path $destination -Parent
+            if (-not (Test-Path -LiteralPath $destinationParent)) {
+                New-Item -Path $destinationParent -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            }
 
-        Copy-Item -Path $repoFile.backupPath -Destination $destination -Force
-        $restored = $true
+            Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Failed to restore repo file '$($repoFile.relativePath)': $($_.Exception.Message)" -Level WARNING
+            $restored = $false
+        }
     }
 
     return $restored
@@ -1322,9 +1344,14 @@ try {
             Set-StepState -StepId $stepId -Status "skipped" -Message "Backup manifest not found; using C:\Setup fallback"
         }
         elseif (Ensure-CanonicalRepo -Manifest $manifest) {
-            $null = Restore-RepoFilesFromManifest -Manifest $manifest
-            Add-SummaryItem -Step "Repo" -Status "OK" -Message "Canonical repo ready at $CanonicalRepoPath"
-            Set-StepState -StepId $stepId -Status "done" -Message "Canonical repo ready"
+            if (Restore-RepoFilesFromManifest -Manifest $manifest) {
+                Add-SummaryItem -Step "Repo" -Status "OK" -Message "Canonical repo ready at $CanonicalRepoPath"
+                Set-StepState -StepId $stepId -Status "done" -Message "Canonical repo ready"
+            }
+            else {
+                Add-SummaryItem -Step "Repo" -Status "FAIL" -Message "Personal repo file restore incomplete; retry setup after correcting the backup"
+                Set-StepState -StepId $stepId -Status "failed" -Message "Personal repo file restore incomplete"
+            }
         }
         else {
             Write-Log "Canonical repo unavailable; continuing with C:\Setup assets" -Level WARNING
