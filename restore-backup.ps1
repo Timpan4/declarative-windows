@@ -146,39 +146,55 @@ if ($backupJsonEntry) {
 
 foreach ($repoFile in $repoPlan) {
     $destination = $repoFile.destination
-    $destinationParent = Split-Path -Path $destination -Parent
+    try {
+        $destinationParent = Split-Path -Path $destination -Parent
 
-    if ($destinationParent -and -not (Test-Path $destinationParent)) {
-        if ($PSCmdlet.ShouldProcess($destinationParent, "Create repo restore directory")) {
-            New-Item -Path $destinationParent -ItemType Directory -Force | Out-Null
+        if ($destinationParent -and -not (Test-Path $destinationParent)) {
+            if ($PSCmdlet.ShouldProcess($destinationParent, "Create repo restore directory")) {
+                New-Item -Path $destinationParent -ItemType Directory -Force | Out-Null
+            }
         }
+
+        $repoFileSource = $repoFile.source
+
+        if ((Test-Path $destination) -and $Mode -eq "SkipExisting") {
+            $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "skipped" })
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($destination, "Restore repo file")) {
+            Copy-Item -LiteralPath $repoFileSource -Destination $destination -Force:($Mode -eq "Overwrite")
+        }
+
+        $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
     }
-
-    $repoFileSource = $repoFile.source
-
-    if ((Test-Path $destination) -and $Mode -eq "SkipExisting") {
-        $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "skipped" })
-        continue
+    catch {
+        $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "failed"; message = $_.Exception.Message })
     }
-
-    if ($PSCmdlet.ShouldProcess($destination, "Restore repo file")) {
-        Copy-Item -LiteralPath $repoFileSource -Destination $destination -Force:($Mode -eq "Overwrite")
-    }
-
-    $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
 }
 
 foreach ($rule in $contentPlan) {
     $sourcePath = $rule.source
     $targetPath = $rule.destination
-    $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
+    try {
+        $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
+        $message = if ($success) { $null } else { "robocopy exit code $LASTEXITCODE" }
+    }
+    catch {
+        $success = $false
+        $message = $_.Exception.Message
+    }
     $restoreReport.Add([pscustomobject]@{
         type = "content"
         path = $targetPath
         status = if ($success) { "restored" } else { "failed" }
+        message = $message
     })
 }
 
 $reportPath = Join-Path (Split-Path -Path $resolvedManifestPath -Parent) "restore-report.json"
-$restoreReport | ConvertTo-Json -Depth 5 | Set-Content -Path $reportPath -Force
+ConvertTo-Json -InputObject $restoreReport.ToArray() -Depth 5 | Set-Content -Path $reportPath -Force
+if (@($restoreReport | Where-Object { $_.status -eq 'failed' }).Count -gt 0) {
+    throw "Restore completed with failures. Review $reportPath before retrying."
+}
 Write-Success "Restore report written to $reportPath"
