@@ -11,22 +11,22 @@ Describe 'isolated Sophia release extraction' {
 
     BeforeEach {
         $SetupPath = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
-        $SophiaVersion = '7.1.4'
+        $SophiaVersion = '7.3.0'
         $SophiaDir = Join-Path $SetupPath 'Sophia-Script'
         $SophiaScript = Join-Path $SophiaDir 'Sophia.ps1'
         $SophiaZipName = 'release.zip'
         $SophiaDownloadUrl = 'https://example.invalid/fixture.zip'
         $release = Join-Path $TestDrive ('archive-' + [guid]::NewGuid().ToString('N'))
-        $releaseRoot = Join-Path $release 'Sophia_Script_for_Windows_11_v7.1.4'
-        $files = @('Sophia.ps1', 'Module\Sophia.psm1', 'Import-TabCompletion.ps1', 'Binaries\LGPO.exe')
+        $releaseRoot = Join-Path $release 'Sophia_Script_for_Windows_11_v7.3.0'
+        $files = @('Sophia.ps1', 'Module\Sophia.psm1', 'Import-TabCompletion.ps1', 'Module\Binaries\LGPO.exe', 'Module\Private\WinAPI.ps1')
         $files += @('Get-Hash', 'InitialActions', 'PostActions', 'Set-KnownFolderPath', 'Set-Policy', 'Set-UserShellFolder', 'Show-Menu', 'Write-AdditionalKeys', 'Write-ExtensionKeys') | ForEach-Object { "Module\Private\$_.ps1" }
-        $files += @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'hu-HU', 'it-IT', 'pl-PL', 'pt-BR', 'ru-RU', 'tr-TR', 'uk-UA', 'zh-CN') | ForEach-Object { "Localizations\$_\Sophia.psd1" }
-        foreach ($file in $files + 'Manifest\SophiaScript.psd1') {
+        $files += @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'hu-HU', 'it-IT', 'pl-PL', 'pt-BR', 'ru-RU', 'tr-TR', 'uk-UA', 'zh-CN') | ForEach-Object { "Module\Localizations\$_\Sophia.psd1" }
+        foreach ($file in $files + 'Module\Manifest\SophiaScript.psd1') {
             $path = Join-Path $releaseRoot $file
             New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
             Set-Content -LiteralPath $path -Value 'fixture only'
         }
-        Set-Content -LiteralPath (Join-Path $releaseRoot 'Manifest\SophiaScript.psd1') -Value "@{ ModuleVersion = '7.1.4' }"
+        Set-Content -LiteralPath (Join-Path $releaseRoot 'Module\Manifest\SophiaScript.psd1') -Value "@{ ModuleVersion = '7.3.0' }"
         $stale = Join-Path $SetupPath 'unrelated\Sophia.ps1'
         New-Item -ItemType Directory -Path (Split-Path $stale -Parent) -Force | Out-Null
         Set-Content -LiteralPath $stale -Value 'unrelated script'
@@ -43,7 +43,7 @@ Describe 'isolated Sophia release extraction' {
     }
 
     It 'rejects an incomplete archive without publishing it' {
-        Remove-Item -LiteralPath (Join-Path $releaseRoot 'Binaries\LGPO.exe')
+        Remove-Item -LiteralPath (Join-Path $releaseRoot 'Module\Binaries\LGPO.exe')
         Get-SophiaScript | Should -BeNullOrEmpty
         Test-Path -LiteralPath $SophiaDir | Should -BeFalse
         Get-Content -LiteralPath $stale | Should -Be 'unrelated script'
@@ -63,5 +63,15 @@ Describe 'isolated Sophia release extraction' {
         Get-SophiaScript | Should -BeNullOrEmpty
         Get-Content -LiteralPath $SophiaScript | Should -Be 'existing script'
         Should -Invoke Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'preserves the preparation outcome when staging cleanup fails' {
+        Mock Remove-Item { throw 'Synthetic locked staging directory' }
+        Get-SophiaScript | Should -Be $SophiaScript
+        Get-Content -LiteralPath $SophiaScript | Should -Be 'fixture only'
+        # A failed preparation still returns null even if its cleanup also fails.
+        $SophiaDir = Join-Path $SetupPath 'second-install'
+        Mock Expand-Archive { throw 'Synthetic extraction failure' }
+        Get-SophiaScript | Should -BeNullOrEmpty
     }
 }

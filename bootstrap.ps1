@@ -45,9 +45,9 @@ $StateFile = Join-Path $SetupPath "state.json"
 $ProgressFile = Join-Path $SetupPath "progress.json"
 $CanonicalRepoPath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "declarative-windows"
 $CanonicalBootstrap = Join-Path $CanonicalRepoPath "bootstrap.ps1"
-$SophiaDir = Join-Path $SetupPath "Sophia-Script"
+$SophiaVersion = '7.3.0'
+$SophiaDir = Join-Path $SetupPath "Sophia-Script-$SophiaVersion"
 $SophiaScript = Join-Path $SophiaDir "Sophia.ps1"
-$SophiaVersion = "7.1.4"
 $SophiaZipName = "Sophia.Script.for.Windows.11.v$SophiaVersion.zip"
 $SophiaDownloadUrl = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$SophiaVersion/$SophiaZipName"
 $FailedInstallsLog = Join-Path $SetupPath "failed-installs.log"
@@ -380,19 +380,19 @@ function Test-SophiaFramework {
     param([string]$Path)
 
     $requiredFiles = @(
-        'Sophia.ps1', 'Manifest\SophiaScript.psd1', 'Module\Sophia.psm1',
-        'Import-TabCompletion.ps1', 'Binaries\LGPO.exe'
+        'Sophia.ps1', 'Module\Manifest\SophiaScript.psd1', 'Module\Sophia.psm1',
+        'Import-TabCompletion.ps1', 'Module\Binaries\LGPO.exe', 'Module\Private\WinAPI.ps1'
     )
     foreach ($name in @('Get-Hash', 'InitialActions', 'PostActions', 'Set-KnownFolderPath', 'Set-Policy', 'Set-UserShellFolder', 'Show-Menu', 'Write-AdditionalKeys', 'Write-ExtensionKeys')) {
         $requiredFiles += "Module\Private\$name.ps1"
     }
     foreach ($culture in @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'hu-HU', 'it-IT', 'pl-PL', 'pt-BR', 'ru-RU', 'tr-TR', 'uk-UA', 'zh-CN')) {
-        $requiredFiles += "Localizations\$culture\Sophia.psd1"
+        $requiredFiles += "Module\Localizations\$culture\Sophia.psd1"
     }
     foreach ($file in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $Path $file) -PathType Leaf)) { return $false }
     }
-    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Path 'Manifest\SophiaScript.psd1')
+    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Path 'Module\Manifest\SophiaScript.psd1')
     return $manifest.ModuleVersion -eq $SophiaVersion
 }
 
@@ -429,15 +429,38 @@ function Get-SophiaScript {
         return $null
     }
     finally {
-        if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
-            $resolvedStagingPath = [IO.Path]::GetFullPath($stagingPath)
-            if (-not $resolvedStagingPath.StartsWith($setupRoot + '\.sophia-', [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Refusing to clean a Sophia staging path outside the setup directory.'
+        try {
+            if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
+                $resolvedStagingPath = [IO.Path]::GetFullPath($stagingPath)
+                if (-not $resolvedStagingPath.StartsWith($setupRoot + '\.sophia-', [StringComparison]::OrdinalIgnoreCase)) {
+                    throw 'Refusing to clean a Sophia staging path outside the setup directory.'
+                }
+                Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force -ErrorAction Stop
             }
-            Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Sophia staging cleanup failed: $($_.Exception.Message)" -Level WARNING
         }
     }
 }
+function Invoke-SophiaPreset {
+    param([string]$FrameworkRoot, [string]$PresetPath)
+
+    $completionPath = [IO.Path]::GetTempFileName()
+    try {
+        $runner = Join-Path $PSScriptRoot 'modules\Run-SophiaPreset.ps1'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runner -FrameworkRoot $FrameworkRoot -PresetPath $PresetPath -CompletionPath $completionPath
+        $exitCode = $LASTEXITCODE
+        $completion = [string](Get-Content -LiteralPath $completionPath -Raw)
+        if ($exitCode -ne 0 -or $completion -notmatch '^completed\s*$') {
+            throw "Sophia preset did not complete successfully (exit code $exitCode)."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $completionPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Wait-ForNetwork {
     param(
         [int]$TimeoutSeconds = 300,
@@ -1385,10 +1408,6 @@ try {
     if ($OptionalAppsOnly) {
         Write-Log "Step 3: Skipping Sophia (optional apps only mode)" -Level INFO
     }
-    elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 3: Skipping Sophia (already completed)" -Level INFO
-        Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Skipped (already completed)"
-    }
     elseif ($DryRun) {
         Write-Log "Step 3: Dry run - skipping Sophia Script" -Level WARNING
         Add-SummaryItem -Step "Sophia" -Status "WARN" -Message "Dry run: Sophia Script skipped"
@@ -1402,12 +1421,14 @@ try {
     }
     else {
         $presetHash = (Get-FileHash -Path $SophiaPreset -Algorithm SHA256).Hash
+        # Markers from the former stock-preset invocation do not prove custom actions ran.
+        $expectedMarker = "custom-preset-v1:${SophiaVersion}:$presetHash"
         $markerHash = $null
         if (Test-Path $SophiaMarker) {
             $markerHash = (Get-Content -Path $SophiaMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
         }
 
-        if ($markerHash -and $markerHash -eq $presetHash) {
+        if ($markerHash -and $markerHash -eq $expectedMarker -and -not $Force) {
             Write-Log "Sophia Script already applied; skipping" -Level INFO
             Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Already applied"
             Set-StepState -StepId $stepId -Status "done" -Message "Already applied"
@@ -1423,29 +1444,12 @@ try {
             }
             else {
                 try {
-                    # Copy preset into the Sophia directory and run it through the framework
-                    $presetInSophiaDir = Join-Path $SophiaDir (Split-Path $SophiaPreset -Leaf)
-                    Copy-Item -Path $SophiaPreset -Destination $presetInSophiaDir -Force
-
                     Write-Log "Running Sophia Script v$SophiaVersion with preset..." -Level INFO
-                    $global:LASTEXITCODE = $null
-
-                    & powershell.exe -ExecutionPolicy Bypass -File $sophiaFramework -Preset $presetInSophiaDir
-
-                    $exitCode = $global:LASTEXITCODE
-
-                    if ($? -and ($null -eq $exitCode -or $exitCode -eq 0)) {
-                        Write-Log "Sophia Script execution completed" -Level SUCCESS
-                        Set-Content -Path $SophiaMarker -Value $presetHash -Force
-                        Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Sophia preset applied"
-                        Set-StepState -StepId $stepId -Status "done" -Message "Sophia preset applied"
-                    }
-                    else {
-                        Write-Log "Sophia Script completed with exit code: $exitCode" -Level WARNING
-                        Add-FailedItem -Category "Sophia Script" -Item "Sophia-Preset.ps1" -Reason "Exited with code $exitCode"
-                        Add-SummaryItem -Step "Sophia" -Status "WARN" -Message "Sophia completed with warnings (exit $exitCode) - see Failed Installs.txt"
-                        Set-StepState -StepId $stepId -Status "failed" -Message "Sophia exit code $exitCode"
-                    }
+                    Invoke-SophiaPreset -FrameworkRoot $SophiaDir -PresetPath $SophiaPreset
+                    Write-Log "Sophia Script execution completed" -Level SUCCESS
+                    Set-Content -Path $SophiaMarker -Value $expectedMarker -Force
+                    Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Sophia preset applied"
+                    Set-StepState -StepId $stepId -Status "done" -Message "Sophia preset applied"
                 }
                 catch {
                     Write-Log "ERROR during Sophia Script execution: $($_.Exception.Message)" -Level ERROR

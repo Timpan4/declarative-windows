@@ -2,7 +2,7 @@
 **Version:** 6.9.1 (archived snapshot)
 **Source:** https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/src/Sophia_Script_for_Windows_11/Sophia.ps1
 
-> This file is an older local reference. The active preset targets Sophia Script `7.1.4` and Windows 11 `24H2+`, so verify behavior against the upstream 7.1.4 release before relying on this document.
+> This file is an older local reference. The active preset targets Sophia Script `7.3.0` and Windows 11 `25H2+`, so verify behavior against the upstream 7.3.0 release before relying on this document.
 
 ---
 

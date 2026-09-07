@@ -146,17 +146,15 @@ If you want to test OS tweaks before automation:
 
 ```powershell
 # 1. Download Sophia Script for Windows 11
-Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/latest/download/Sophia.Script.for.Windows.11.v7.1.4.zip" -OutFile "SophiaScript.zip"
+Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/7.3.0/Sophia.Script.for.Windows.11.v7.3.0.zip" -OutFile "SophiaScript.zip"
 
 # 2. Extract the archive
 Expand-Archive -Path "SophiaScript.zip" -DestinationPath ".\SophiaScript" -Force
 
-# 3. Copy the preset file to Sophia folder
-Copy-Item ".\Sophia-Preset.ps1" -Destination ".\SophiaScript\"
-
-# 4. Run with custom preset (as Administrator)
-cd .\SophiaScript
-.\Sophia.ps1 -Preset .\Sophia-Preset.ps1
+# 3. Run only the custom preset (as Administrator, from this repo)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\modules\Run-SophiaPreset.ps1 `
+    -FrameworkRoot ".\SophiaScript\Sophia_Script_for_Windows_11_v7.3.0" `
+    -PresetPath ".\Sophia-Preset.ps1" -CompletionPath ".\sophia-test.completed"
 ```
 
 **Important:**
@@ -194,7 +192,7 @@ declarative-windows/
 
 ## Windows Version Support
 
-**Supported:** Windows 11 (24H2 or later)
+**Supported:** Windows 11 (25H2 or later)
 
 **Not Supported:** Windows 10
 
