@@ -7,6 +7,13 @@
 .DESCRIPTION
     Restores applications, clones the canonical repo when available, applies
     Sophia and registry configuration, and creates desktop shortcuts.
+
+.PARAMETER ConfigRoot
+    Directory containing apps.json, optional-apps.json, Sophia-Preset.ps1 and
+    config\registry.json. Defaults to this script's directory, including when
+    launched from the canonical repo. Missing files do not fall back individually
+    to staged copies. Logs and state remain in C:\Setup. Runs using configuration
+    outside C:\Setup do not restore backup configuration over the repo's edits.
 #>
 
 [CmdletBinding()]
@@ -14,21 +21,26 @@ param(
     [switch]$DryRun,
     [switch]$Force,
     [switch]$PromptRestart,
-    [switch]$OptionalAppsOnly
+    [switch]$OptionalAppsOnly,
+    [string]$ConfigRoot = $PSScriptRoot
 )
 
 $ErrorActionPreference = "Continue"
 $SetupPath = "C:\Setup"
+$ConfigRoot = (Resolve-Path -LiteralPath $ConfigRoot -ErrorAction Stop).ProviderPath
+if (-not (Test-Path -LiteralPath $ConfigRoot -PathType Container)) {
+    throw "Configuration root must be a directory: $ConfigRoot"
+}
 $LogFile = Join-Path $SetupPath "install.log"
-$AppsJson = Join-Path $SetupPath "apps.json"
-$OptionalAppsJson = Join-Path $SetupPath "optional-apps.json"
+$AppsJson = Join-Path $ConfigRoot "apps.json"
+$OptionalAppsJson = Join-Path $ConfigRoot "optional-apps.json"
 $RestoreScript = Join-Path $SetupPath "restore-backup.ps1"
-$SophiaPreset = Join-Path $SetupPath "Sophia-Preset.ps1"
+$SophiaPreset = Join-Path $ConfigRoot "Sophia-Preset.ps1"
 $SophiaMarker = Join-Path $SetupPath "sophia.completed"
 $WingetMarker = Join-Path $SetupPath "winget.completed"
 $OptionalWingetMarker = Join-Path $SetupPath "optional-winget.completed"
-$RegistryConfig = Join-Path $SetupPath "config\registry.json"
-$RegistryScript = Join-Path $SetupPath "apply-registry.ps1"
+$RegistryConfig = Join-Path $ConfigRoot "config\registry.json"
+$RegistryScript = Join-Path $PSScriptRoot "apply-registry.ps1"
 $StateFile = Join-Path $SetupPath "state.json"
 $ProgressFile = Join-Path $SetupPath "progress.json"
 $CanonicalRepoPath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "declarative-windows"
@@ -1326,6 +1338,9 @@ try {
     $stepId = "repo"
     if ($OptionalAppsOnly) {
         Write-Log "Step 2: Skipping canonical repo restore (optional apps only mode)" -Level INFO
+    }
+    elseif ($ConfigRoot.TrimEnd('\') -ne $SetupPath.TrimEnd('\')) {
+        Write-Log "Step 2: Using configuration at $ConfigRoot; skipping backup configuration restore" -Level INFO
     }
     elseif (-not (Should-RunStep -StepId $stepId)) {
         Write-Log "Step 2: Skipping canonical repo restore (already completed)" -Level INFO
