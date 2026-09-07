@@ -308,8 +308,8 @@ function Invoke-WingetManifestInstall {
 
     if (-not (Test-Path $ManifestPath)) {
         Write-Log "WARNING: $ManifestLabel not found at $ManifestPath - skipping application import" -Level WARNING
-        Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message $MissingManifestMessage
-        Set-StepState -StepId $StepId -Status "done" -Message $MissingManifestMessage
+        Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message $MissingManifestMessage
+        Set-StepState -StepId $StepId -Status "failed" -Message $MissingManifestMessage
         return $false
     }
 

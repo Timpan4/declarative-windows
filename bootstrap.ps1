@@ -185,7 +185,9 @@ function Write-Log {
         default { Write-Host $logMessage }
     }
 
-    Add-Content -Path $LogFile -Value $logMessage -ErrorAction SilentlyContinue
+    if (-not $DryRun) {
+        Add-Content -Path $LogFile -Value $logMessage -ErrorAction SilentlyContinue
+    }
 }
 
 function Add-SummaryItem {
@@ -1527,8 +1529,8 @@ try {
     }
     elseif (-not (Test-Path $RegistryConfig)) {
         Write-Log "WARNING: registry.json not found at $RegistryConfig" -Level WARNING
-        Add-SummaryItem -Step "Registry" -Status "WARN" -Message "registry.json not found"
-        Set-StepState -StepId $stepId -Status "done" -Message "registry.json not found"
+        Add-SummaryItem -Step "Registry" -Status "SKIP" -Message "registry.json not found"
+        Set-StepState -StepId $stepId -Status "skipped" -Message "registry.json not found"
     }
     elseif (-not (Test-Path $RegistryScript)) {
         Write-Log "ERROR: Registry apply script not found at $RegistryScript" -Level ERROR
@@ -1637,8 +1639,8 @@ try {
     }
     elseif (-not (Test-Path $OptionalAppsJson)) {
         Write-Log "optional-apps.json not found at $OptionalAppsJson - skipping optional apps shortcut" -Level INFO
-        Add-SummaryItem -Step "Optional Apps Shortcut" -Status "WARN" -Message "optional-apps.json not found"
-        Set-StepState -StepId $stepId -Status "done" -Message "optional-apps.json not found"
+        Add-SummaryItem -Step "Optional Apps Shortcut" -Status "SKIP" -Message "optional-apps.json not found"
+        Set-StepState -StepId $stepId -Status "skipped" -Message "optional-apps.json not found"
     }
     else {
         try {
@@ -1669,8 +1671,8 @@ try {
     elseif (-not (Test-Path $OptionalAppsJson)) {
         if ($OptionalAppsOnly) {
             Write-Log "WARNING: optional-apps.json not found at $OptionalAppsJson" -Level WARNING
-            Add-SummaryItem -Step "Optional Apps" -Status "WARN" -Message "optional-apps.json not found"
-            Set-StepState -StepId $stepId -Status "done" -Message "optional-apps.json not found"
+            Add-SummaryItem -Step "Optional Apps" -Status "FAIL" -Message "optional-apps.json not found"
+            Set-StepState -StepId $stepId -Status "failed" -Message "optional-apps.json not found"
         }
     }
     else {
