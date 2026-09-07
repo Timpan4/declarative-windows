@@ -164,7 +164,7 @@ function Get-BackupRules {
             kind = "knownFolder"
             label = $entry.name
             required = [bool]$entry.required
-            tags = @($entry.tags)
+            tags = @($entry.tags | Where-Object { $null -ne $_ })
             restorePath = $folderPath
         })
     }
@@ -182,7 +182,7 @@ function Get-BackupRules {
             kind = "extraPath"
             label = $label
             required = [bool]$entry.required
-            tags = @($entry.tags)
+            tags = @($entry.tags | Where-Object { $null -ne $_ })
             restorePath = $expandedPath
         })
     }
@@ -332,11 +332,14 @@ if (-not $BackupName) {
     $BackupName = Get-Date -Format "yyyyMMdd-HHmmss"
 }
 
+$DestinationRoot = Get-CanonicalBackupPath ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DestinationRoot))
 $backupRoot = Join-Path $DestinationRoot $BackupContainerName
 $sessionRoot = Join-Path $backupRoot $BackupName
 if (Test-Path -LiteralPath $sessionRoot) {
     throw "Backup session already exists: $sessionRoot. Choose a new BackupName; existing sessions cannot be resumed or replaced."
 }
+Assert-BackupConfiguration $config
+$sessionRoot = Resolve-ContainedBackupPath -Path $BackupName -Root $backupRoot
 $filesRoot = Join-Path $sessionRoot "files"
 $repoFilesRoot = Join-Path $sessionRoot "repo-files"
 $exportsRoot = Join-Path $sessionRoot "exports"
@@ -353,6 +356,12 @@ $canonicalRepoPath = Resolve-CanonicalRepoPath -Config $config
 $excludePatterns = if ($null -eq $config.excludePatterns) { @() } else { @($config.excludePatterns) }
 # Validate every exclusion before creating the destination or copying any rule.
 $null = @(ConvertTo-RobocopyExclusions -Patterns $excludePatterns)
+foreach ($rule in $rules) {
+    Assert-BackupPathsDisjoint -Source $rule.source -Destination $sessionRoot
+}
+foreach ($repoFile in $repoFiles) {
+    Assert-BackupPathsDisjoint -Source $repoFile.source -Destination $sessionRoot
+}
 
 Assert-DestinationRoot -Path $DestinationRoot
 

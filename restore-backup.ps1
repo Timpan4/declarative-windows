@@ -94,6 +94,7 @@ if (-not $ManifestPath) {
 
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
 $manifest = Get-Content -Path $resolvedManifestPath -Raw | ConvertFrom-Json
+Assert-BackupManifest $manifest
 $actualBackupRoot = Split-Path -Parent $resolvedManifestPath
 $manifestBackupRoot = Get-BackupManifestRoot -Manifest $manifest
 
@@ -102,6 +103,29 @@ if (-not $DestinationProfileRoot) {
 }
 
 $restoreReport = New-Object System.Collections.Generic.List[object]
+
+# Resolve and validate the complete selected plan before the first filesystem write.
+$originalOsDrive = $manifest.machine.osDrive
+$restoreTargetMap = Get-RestoreTargetMap -Manifest $manifest
+$repoTargetRoot = Get-CanonicalBackupPath (Resolve-RestoreTargetPath -Path $manifest.repo.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile)
+$repoPlan = @(
+    foreach ($repoFile in $manifest.repoFiles) {
+        $destination = Resolve-ContainedBackupPath -Path $repoFile.relativePath -Root $repoTargetRoot
+        $repoFileSource = Resolve-BackupSourcePath -Path $repoFile.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
+        if (-not (Test-Path -LiteralPath $repoFileSource -PathType Leaf)) { throw "Backup file missing: $repoFileSource" }
+        [pscustomobject]@{ relativePath = $repoFile.relativePath; source = $repoFileSource; destination = $destination }
+    }
+)
+$contentPlan = @(
+    foreach ($rule in $manifest.rules) {
+        if (-not $rule.success -or ($IncludeTags -and @($rule.tags | Where-Object { $IncludeTags -contains $_ }).Count -eq 0)) { continue }
+        $sourcePath = Resolve-BackupSourcePath -Path $rule.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
+        $targetPath = Get-CanonicalBackupPath (Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile)
+        Assert-NoBackupReparsePoint $targetPath
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) { throw "Backup content missing: $sourcePath" }
+        [pscustomobject]@{ source = $sourcePath; destination = $targetPath }
+    }
+)
 
 # Check if backup.json is in the repo files list
 $backupJsonEntry = $manifest.repoFiles | Where-Object { $_.relativePath -eq "config\backup.json" }
@@ -115,16 +139,12 @@ if ($backupJsonEntry) {
     if (-not $restoreBackupJson) {
         Write-Host "Skipping config\backup.json restore. Customize from backup.template.json on the new machine"
         # Remove from list so it's not processed in the loop below
-        $manifest.repoFiles = [array]($manifest.repoFiles | Where-Object { $_.relativePath -ne "config\backup.json" })
+        $repoPlan = @($repoPlan | Where-Object { $_.relativePath -ne "config\backup.json" })
     }
 }
 
-$originalOsDrive = $manifest.machine.osDrive
-$restoreTargetMap = Get-RestoreTargetMap -Manifest $manifest
-
-foreach ($repoFile in $manifest.repoFiles) {
-    $repoTargetRoot = Resolve-RestoreTargetPath -Path $manifest.repo.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile
-    $destination = Join-Path $repoTargetRoot $repoFile.relativePath
+foreach ($repoFile in $repoPlan) {
+    $destination = $repoFile.destination
     $destinationParent = Split-Path -Path $destination -Parent
 
     if ($destinationParent -and -not (Test-Path $destinationParent)) {
@@ -133,7 +153,7 @@ foreach ($repoFile in $manifest.repoFiles) {
         }
     }
 
-    $repoFileSource = Resolve-BackupSourcePath -Path $repoFile.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
+    $repoFileSource = $repoFile.source
 
     if ((Test-Path $destination) -and $Mode -eq "SkipExisting") {
         $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "skipped" })
@@ -141,23 +161,15 @@ foreach ($repoFile in $manifest.repoFiles) {
     }
 
     if ($PSCmdlet.ShouldProcess($destination, "Restore repo file")) {
-        Copy-Item -Path $repoFileSource -Destination $destination -Force:($Mode -eq "Overwrite")
+        Copy-Item -LiteralPath $repoFileSource -Destination $destination -Force:($Mode -eq "Overwrite")
     }
 
     $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
 }
 
-foreach ($rule in $manifest.rules) {
-    if (-not $rule.success) {
-        continue
-    }
-
-    if ($IncludeTags -and @($rule.tags | Where-Object { $IncludeTags -contains $_ }).Count -eq 0) {
-        continue
-    }
-
-    $sourcePath = Resolve-BackupSourcePath -Path $rule.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
-    $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile
+foreach ($rule in $contentPlan) {
+    $sourcePath = $rule.source
+    $targetPath = $rule.destination
     $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
     $restoreReport.Add([pscustomobject]@{
         type = "content"
