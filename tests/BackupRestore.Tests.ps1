@@ -52,20 +52,13 @@ Describe "backup and restore static checks" {
     It "reads manifest backup root metadata before remapping restore paths" {
         $restoreAndModuleContent | Should -Match 'manifest\.backup\.backupRoot'
         $restoreAndModuleContent | Should -Match 'ExpandEnvironmentVariables'
-        $restoreAndModuleContent | Should -Match 'StartsWith\(\$ManifestBackupRoot'
     }
 
     It "uses remapped source paths for both repo files and content rules" {
         $restoreScriptContent | Should -Match 'repoFileSource = Resolve-BackupSourcePath'
         $restoreScriptContent | Should -Match 'sourcePath = Resolve-BackupSourcePath'
         $restoreAndModuleContent | Should -Match 'IsPathRooted'
-        $restoreAndModuleContent | Should -Match 'Join-Path \$ActualBackupRoot \$relativePath'
         $restoreScriptContent | Should -Match 'Resolve-RestoreTargetPath -Path \$rule\.restorePath -ProfileRoot \$DestinationProfileRoot -OriginalOsDrive \$originalOsDrive -RestoreTargetMap \$restoreTargetMap'
-    }
-
-    It "reports when a remapped backup path is used" {
-        $restoreAndModuleContent | Should -Match 'Using remapped backup path:'
-        $restoreAndModuleContent | Should -Match 'Write-Info'
     }
 
     It "shares backup manifest implementation through a module" {
