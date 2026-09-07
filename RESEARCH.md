@@ -51,15 +51,16 @@
   - **Goal:** Understand import process, timing, and error handling
   - **Environment:** Windows VM or test machine
   - **Commands:**
-    - `winget import apps.json` (dry run - shows what will install)
-    - `winget import apps.json --accept-package-agreements --accept-source-agreements`
+    - `(Get-Content -LiteralPath .\apps.json -Raw | ConvertFrom-Json).Sources.Packages | Select-Object PackageIdentifier, Version` (read-only inspection of requested IDs and versions, without checking availability)
+    - `winget import apps.json --accept-package-agreements --accept-source-agreements` (installs applications; run in a disposable VM)
+  - **Reference:** [Microsoft import documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/import). Import installs applications; it has no dry-run option.
   - **Output:** Document any issues, timeouts, or failures
   - **Next Step:** Add error handling to bootstrap.ps1
 
 - [ ] 🟡 Investigate WinGet behavior with `--ignore-versions` flag
   - **Goal:** Determine if flag prevents version conflicts on import
   - **Commands:**
-    - `winget import apps.json --ignore-versions`
+    - `winget import apps.json --ignore-versions` (installs latest available versions; run in a disposable VM)
   - **Output:** Document when to use vs. not use this flag (latest vs. specific version)
   - **Next Step:** Update bootstrap.ps1 with appropriate flags
 

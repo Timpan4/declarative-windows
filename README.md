@@ -116,12 +116,18 @@ Copy `apps-template.json` to `apps.json`, then remove unwanted apps:
 ### 3. Test Your App List
 
 ```powershell
-# Dry run
-winget import apps.json --ignore-versions
+# Read-only inspection of the requested package IDs and versions
+$manifest = Get-Content -LiteralPath .\apps.json -Raw | ConvertFrom-Json
+$manifest.Sources.Packages | Select-Object PackageIdentifier, Version
 
-# Actual import (test in VM)
+# Installs applications (test in a disposable VM)
 winget import apps.json --accept-package-agreements --accept-source-agreements
 ```
+
+JSON inspection does not resolve package availability or predict installation results.
+[`winget import`](https://learn.microsoft.com/en-us/windows/package-manager/winget/import)
+installs applications. `--ignore-versions` installs the latest available versions;
+it is not a dry-run option.
 
 Optional apps can use the same manifest format:
 
