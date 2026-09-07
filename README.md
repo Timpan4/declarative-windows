@@ -77,6 +77,10 @@ If you want a second-stage app list, create `optional-apps.json` alongside `apps
 
 Create a personal backup config by copying `config\backup.template.json` to `config\backup.json`, then enable the known folders and extra paths you want to preserve.
 
+`excludePatterns` accepts recursive directory exclusions such as `**\node_modules\**` and filename patterns such as `*.tmp` or `private.txt`. Directory names are matched at every depth; filename patterns apply at every depth. Escape backslashes in JSON. Other path patterns are rejected before backup directories are created. These exclusions apply to configured folder copies, not the separate personal repo-file backup.
+
+Enabled rules must have distinct names or labels after punctuation is replaced with hyphens and case is normalized. Empty normalized labels are rejected. Each backup also needs a new session name. An existing session is never resumed or overwritten, including with `-Force`.
+
 ```powershell
 .\preflight-backup.ps1 -DestinationRoot "E:\"
 ```

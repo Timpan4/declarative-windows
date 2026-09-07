@@ -187,7 +187,37 @@ function Get-BackupRules {
         })
     }
 
+    $identifiers = @{}
+    foreach ($rule in $rules) {
+        if (-not (Normalize-RuleId -Value $rule.label)) {
+            throw "Backup rule '$($rule.label)' has an empty normalized identifier. Use a label containing letters or numbers."
+        }
+        if ($identifiers.ContainsKey($rule.id)) {
+            throw "Backup rules '$($identifiers[$rule.id])' and '$($rule.label)' share identifier '$($rule.id)'. Use unique names or labels."
+        }
+        $identifiers[$rule.id] = $rule.label
+    }
     return $rules
+}
+
+function ConvertTo-RobocopyExclusions {
+    param([string[]]$Patterns)
+
+    foreach ($pattern in $Patterns) {
+        # Accept both JSON-escaped separators and the template's doubled separators.
+        $normalized = $pattern -replace '[\\/]+', '\'
+        if ($normalized -match '^\*\*\\([^\\:*?"<>|]+)\\\*\*$') {
+            '/XD'
+            $Matches[1]
+        }
+        elseif ($normalized -and $normalized -notmatch '[\\:"<>|]' -and $normalized -notmatch '\*\*' -and $normalized -notin @('.', '..')) {
+            '/XF'
+            $normalized
+        }
+        else {
+            throw "Unsupported backup exclusion '$pattern'. Use **\directory\** for recursive directories or a filename pattern such as *.tmp."
+        }
+    }
 }
 
 function Assert-DestinationRoot {
@@ -239,12 +269,7 @@ function Copy-DirectoryWithRobocopy {
         "/NJS"
     )
 
-    foreach ($pattern in $ExcludePatterns) {
-        $leaf = Split-Path -Path $pattern -Leaf
-        if ($leaf -and $leaf -notmatch '[\*\?]') {
-            $robocopyArgs += @("/XF", $leaf)
-        }
-    }
+    $robocopyArgs += @(ConvertTo-RobocopyExclusions -Patterns $ExcludePatterns)
 
     & robocopy @robocopyArgs 2>&1 | ForEach-Object {
         $line = $_.ToString().Trim()
@@ -307,10 +332,11 @@ if (-not $BackupName) {
     $BackupName = Get-Date -Format "yyyyMMdd-HHmmss"
 }
 
-Assert-DestinationRoot -Path $DestinationRoot
-
 $backupRoot = Join-Path $DestinationRoot $BackupContainerName
 $sessionRoot = Join-Path $backupRoot $BackupName
+if (Test-Path -LiteralPath $sessionRoot) {
+    throw "Backup session already exists: $sessionRoot. Choose a new BackupName; existing sessions cannot be resumed or replaced."
+}
 $filesRoot = Join-Path $sessionRoot "files"
 $repoFilesRoot = Join-Path $sessionRoot "repo-files"
 $exportsRoot = Join-Path $sessionRoot "exports"
@@ -325,6 +351,10 @@ $repoRemoteUrl = Get-RepoRemoteUrl -RepositoryPath $ScriptRoot
 $repoFiles = if ($config.options.backupRepoFiles) { Get-RepoFilesToBackup -RepositoryPath $ScriptRoot } else { @() }
 $canonicalRepoPath = Resolve-CanonicalRepoPath -Config $config
 $excludePatterns = @($config.excludePatterns)
+# Validate every exclusion before creating the destination or copying any rule.
+$null = @(ConvertTo-RobocopyExclusions -Patterns $excludePatterns)
+
+Assert-DestinationRoot -Path $DestinationRoot
 
 foreach ($path in @($sessionRoot, $filesRoot, $repoFilesRoot, $exportsRoot, $reportsRoot)) {
     if ($PSCmdlet.ShouldProcess($path, "Create backup working directory")) {
