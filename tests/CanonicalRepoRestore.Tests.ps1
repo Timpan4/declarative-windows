@@ -22,6 +22,7 @@ Describe "canonical repo file restore" {
         }, $true)
         $runRepoStep = [scriptblock]::Create($repoStep.Extent.Text)
         function Write-Log { param($Message, $Level) }
+        function Update-SetupToolPath { }
     }
 
     BeforeEach {
@@ -90,6 +91,19 @@ Describe "canonical repo file restore" {
         . $runRepoStep
         Get-Content -LiteralPath $editedPath | Should -Be 'edited configuration'
         Should -Invoke Get-BackupManifestData -Times 0
+    }
+
+    It 'refreshes tool discovery before cloning with newly installed Git' {
+        $script:pathRefreshed = $false
+        $fakeGit = Join-Path $TestDrive 'git.ps1'
+        'New-Item -ItemType Directory -Path (Join-Path $args[2] ".git") -Force | Out-Null; $global:LASTEXITCODE = 0' | Set-Content $fakeGit
+        Mock Update-SetupToolPath { $script:pathRefreshed = $true }
+        Mock Get-Command {
+            if ($script:pathRefreshed) { [pscustomobject]@{ Source = $fakeGit } }
+        } -ParameterFilter { $Name -eq 'git' }
+        Ensure-CanonicalRepo -Manifest ([pscustomobject]@{ repo = @{ remoteUrl = 'https://example.invalid/repo' } }) | Should -BeTrue
+        Should -Invoke Update-SetupToolPath -Times 1 -Exactly
+        Test-Path -LiteralPath (Join-Path $CanonicalRepoPath '.git') | Should -BeTrue
     }
 
     It "keeps incomplete repo restoration retryable and marks it done after a successful retry" {

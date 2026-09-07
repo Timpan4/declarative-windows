@@ -43,6 +43,7 @@ This must complete successfully. The validator's `-SchemaDllPath` option support
 - `-SourceIsoHash` (optional): Expected SHA256 hash for the source ISO.
 - `-IsoLabel` (optional): ISO label passed to `oscdimg`.
 - `-OscdimgDownloadUrl` (optional): Direct URL to `oscdimg.exe` or a ZIP containing it, used only if an installed copy is not found. It does not supply Windows SIM or bypass schema validation; ADK Deployment Tools remain required.
+- `-OscdimgSha256` (required when downloading oscdimg): Expected SHA-256 of the downloaded EXE or ZIP, obtained from a trusted source independently of the download. The builder rejects a mismatch before extraction or execution and logs the verified digest. ZIP downloads must contain exactly one `oscdimg.exe`.
 - `-KeepTemp` (optional): Retain temporary extraction files for debugging.
 
 ## ISO Contents
@@ -107,6 +108,10 @@ After first login, bootstrap attempts to clone the original repo remote into `%U
 - `C:\Setup\install.log`: full execution log
 - `C:\Setup\state.json`: step resume state
 - `C:\Users\<User>\Desktop\Setup Summary.txt`: summary report
+
+Only one bootstrap run may own `C:\Setup\state.json` at a time. A competing launch exits without rewriting the owner's reports. State publication is atomic and retains the previous committed file as `state.json.previous`. Corrupt state stops setup and remains untouched. Review the saved state and its previous copy before recovering it; deleting state can repeat completed actions.
+
+User-scope retries publish a complete JSON result before the parent reads it. On timeout or cancellation, bootstrap stops the scheduled task and checks its state before deleting runner files. If termination cannot be confirmed, it retains the task and files and reports their identity in `install.log`; settle that task before retrying setup.
 
 ## Manual Re-run
 

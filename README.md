@@ -129,6 +129,13 @@ winget import apps.json --accept-package-agreements --accept-source-agreements
 ```
 
 JSON inspection does not resolve package availability or predict installation results.
+
+Bootstrap supports `PackageIdentifier` and an optional exact `Version` for each package. `SourceDetails.Name` selects an already registered source; supplied `Identifier`, `Argument`, and `Type` must match that registration. Source and version remain attached to the request during inventory checks, installation, and user-scope retry. Identical IDs from different sources remain separate requests. Omitting `SourceDetails` keeps WinGet's default source selection. Other installation fields, including `Scope`, `Channel`, and installer override arguments, are rejected before installation.
+
+WinGet must be available through Microsoft App Installer for the current user. An unavailable client produces one prerequisite failure. Bootstrap refreshes its process PATH from the registered machine and user paths so tools installed during setup can be discovered later in the same run.
+
+Package outcomes in `state.json` distinguish `verified`, `unverified`, and `failed`, with the requested source/version, exit code, and diagnostic category. An unverified success is checked again on the next ordinary run; a package that is then discoverable is not reinstalled. Summaries preserve hash-mismatch failures without copying arbitrary installer output. Full native output stays in `install.log`.
+
 [`winget import`](https://learn.microsoft.com/en-us/windows/package-manager/winget/import)
 installs applications. `--ignore-versions` installs the latest available versions;
 it is not a dry-run option.
@@ -157,6 +164,9 @@ If you want to test OS tweaks before automation:
 ```powershell
 # 1. Download Sophia Script for Windows 11
 Invoke-WebRequest -Uri "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/7.3.0/Sophia.Script.for.Windows.11.v7.3.0.zip" -OutFile "SophiaScript.zip"
+if ((Get-FileHash -LiteralPath .\SophiaScript.zip -Algorithm SHA256).Hash -ne 'd342149e13053ea87c6119706a1f9d7d56d08c6e55ced113b1c32a30e7873bf2') {
+    throw 'Sophia release SHA-256 mismatch'
+}
 
 # 2. Extract the archive
 Expand-Archive -Path "SophiaScript.zip" -DestinationPath ".\SophiaScript" -Force
@@ -166,6 +176,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\modules\Run-SophiaPres
     -FrameworkRoot ".\SophiaScript\Sophia_Script_for_Windows_11_v7.3.0" `
     -PresetPath ".\Sophia-Preset.ps1" -CompletionPath ".\sophia-test.completed"
 ```
+
+Bootstrap verifies this [7.3.0 release digest](https://github.com/farag2/Sophia-Script-for-Windows/releases/tag/7.3.0) before extraction. It retains `.release.zip` and checks cached framework files against that archive before reuse. If an older cache lacks the archive or its files have changed, move that Sophia cache directory aside and rerun setup to download a verified copy.
 
 **Important:**
 - Always test in a VM first before running on your main PC
