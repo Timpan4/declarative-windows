@@ -77,6 +77,19 @@ Describe "build-iso.ps1 static checks" {
     It "does not reference MountDir anymore" {
         $scriptContent.Contains('$MountDir') | Should -Be $false
     }
+
+    It "preserves the main try block when Windows PowerShell 5.1 reads the file" {
+        & powershell.exe -NoProfile -Command {
+            param($path)
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors)
+            $main = @($ast.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.TryStatementAst] })
+            if ($errors.Count -gt 0 -or $main.Count -ne 1 -or $main[0].CatchClauses.Count -ne 1 -or -not $main[0].Finally) {
+                throw 'Windows PowerShell cannot read the ISO builder main try/catch/finally block.'
+            }
+        } -args $scriptPath
+        $LASTEXITCODE | Should -Be 0
+    }
 }
 
 Describe "ISO payload selection" {
