@@ -23,6 +23,7 @@ Describe 'generated automation shortcuts' {
             $link = $shell.CreateShortcut($path)
             ([IO.File]::ReadAllBytes($path)[0x15] -band 0x20) | Should -Be 0x20
             $link.Arguments | Should -Match '^-NoProfile -ExecutionPolicy Bypass -File '
+            $link.Arguments | Should -Match ([regex]::Escape('-WorkingDirectory "' + $SetupPath + '"'))
             $link.WorkingDirectory | Should -Be $SetupPath
         }
         $setupArguments = $shell.CreateShortcut($shortcutPath).Arguments
@@ -40,5 +41,22 @@ Describe 'generated automation shortcuts' {
         { & ([scriptblock]::Create($guard.Extent.Text)) } | Should -Not -Throw
         $ExpectedUserSid = 'S-1-0-0'
         { & ([scriptblock]::Create($guard.Extent.Text)) } | Should -Throw '*another account*'
+    }
+
+    It 'sets the shortcut working directory before setup or restore begins' {
+        $WorkingDirectory = Join-Path $TestDrive 'Shortcut start'
+        New-Item -ItemType Directory -Path $WorkingDirectory | Out-Null
+        foreach ($script in @('bootstrap.ps1', 'restore-backup.ps1')) {
+            $scriptAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "..\$script"), [ref]$null, [ref]$null)
+            $guard = $scriptAst.EndBlock.Statements | Where-Object { $_.Extent.Text -match '^if \(\$WorkingDirectory\)' }
+            $guard | Should -Not -BeNullOrEmpty
+            Push-Location
+            try {
+                & ([scriptblock]::Create($guard.Extent.Text))
+                (Get-Location).Path | Should -Be $WorkingDirectory
+            } finally {
+                Pop-Location
+            }
+        }
     }
 }

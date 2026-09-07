@@ -11,10 +11,16 @@ param(
 
     [string[]]$IncludeTags,
 
-    [switch]$Force
+    [switch]$Force,
+
+    [string]$WorkingDirectory
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($WorkingDirectory) {
+    Set-Location -LiteralPath $WorkingDirectory -ErrorAction Stop
+}
 
 function Write-Info {
     param([string]$Message)
