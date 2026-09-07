@@ -350,13 +350,17 @@ $rules = Get-BackupRules -Config $config
 $repoRemoteUrl = Get-RepoRemoteUrl -RepositoryPath $ScriptRoot
 $repoFiles = if ($config.options.backupRepoFiles) { Get-RepoFilesToBackup -RepositoryPath $ScriptRoot } else { @() }
 $canonicalRepoPath = Resolve-CanonicalRepoPath -Config $config
-$excludePatterns = @($config.excludePatterns)
+$excludePatterns = if ($null -eq $config.excludePatterns) { @() } else { @($config.excludePatterns) }
 # Validate every exclusion before creating the destination or copying any rule.
 $null = @(ConvertTo-RobocopyExclusions -Patterns $excludePatterns)
 
 Assert-DestinationRoot -Path $DestinationRoot
 
-foreach ($path in @($sessionRoot, $filesRoot, $repoFilesRoot, $exportsRoot, $reportsRoot)) {
+if ($PSCmdlet.ShouldProcess($sessionRoot, "Create new backup session")) {
+    New-Item -Path $sessionRoot -ItemType Directory -ErrorAction Stop | Out-Null
+}
+
+foreach ($path in @($filesRoot, $repoFilesRoot, $exportsRoot, $reportsRoot)) {
     if ($PSCmdlet.ShouldProcess($path, "Create backup working directory")) {
         New-Item -Path $path -ItemType Directory -Force | Out-Null
     }
