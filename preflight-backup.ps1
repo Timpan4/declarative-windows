@@ -385,15 +385,18 @@ foreach ($rule in $rules) {
     $currentRuleIndex++
     Write-BackupProgress -Activity "Backing up configured folders" -Status "[$currentRuleIndex/$totalRuleCount] $($rule.label)" -Current $currentRuleIndex -Total $totalRuleCount
 
-    if (-not (Test-Path $rule.source)) {
-        if ($rule.required) {
-            $failedRules.Add([pscustomobject]@{ id = $rule.id; message = "Required source path not found" })
-        }
-        continue
-    }
-
     $ruleDestination = Join-Path $filesRoot $rule.id
-    $copyResult = Copy-DirectoryWithRobocopy -Source $rule.source -Destination $ruleDestination -ExcludePatterns $excludePatterns
+    $skipped = $false
+    if (-not (Test-Path $rule.source)) {
+        $skipped = -not $rule.required
+        $copyResult = [pscustomobject]@{
+            Success = $false
+            Message = if ($rule.required) { "Required source path not found" } else { "Optional source path not found; skipped" }
+        }
+    }
+    else {
+        $copyResult = Copy-DirectoryWithRobocopy -Source $rule.source -Destination $ruleDestination -ExcludePatterns $excludePatterns
+    }
     if ($VerifyHashes -and $copyResult.Success -and -not $WhatIfPreference) {
         foreach ($file in Get-BackupTreeFiles $ruleDestination) {
             $relativePath = Get-RelativePath -Path $file.FullName -BasePath $ruleDestination
@@ -411,10 +414,11 @@ foreach ($rule in $rules) {
         tags = $rule.tags
         backupPath = Get-RelativePath -Path $ruleDestination -BasePath $sessionRoot
         success = $copyResult.Success
+        skipped = $skipped
         message = $copyResult.Message
     })
 
-    if (-not $copyResult.Success) {
+    if (-not $copyResult.Success -and -not $skipped) {
         $failedRules.Add([pscustomobject]@{ id = $rule.id; message = $copyResult.Message })
     }
 }
@@ -515,13 +519,14 @@ $reportLines = @(
     "Manifest: $ManifestPath",
     "Repo Remote: $repoRemoteUrl",
     "Backup Root: $sessionRoot",
+    "Outcome: $(if ($failedRules.Count -gt 0) { 'FAILED' } else { 'OK' })",
     "",
     "Rules:"
 )
 
 foreach ($rule in $manifestRules) {
-    $status = if ($rule.success) { "OK" } else { "FAILED" }
-    $reportLines += "- [$status] $($rule.label) -> $($rule.backupPath)"
+    $status = if ($rule.skipped) { "SKIPPED" } elseif ($rule.success) { "OK" } else { "FAILED" }
+    $reportLines += "- [$status] $($rule.label): $($rule.source) -> $($rule.backupPath) - $($rule.message)"
 }
 
 if ($manifestRepoFiles.Count -gt 0) {
