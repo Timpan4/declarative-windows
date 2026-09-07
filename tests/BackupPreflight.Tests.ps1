@@ -9,6 +9,17 @@ BeforeAll {
 }
 
 Describe 'backup preflight guards' {
+    It 'creates a backup manifest when the optional exclusion list is absent' {
+        $configPath = Join-Path $TestDrive 'minimal.json'
+        $destination = Join-Path $TestDrive 'minimal-backup'
+        '{"knownFolders":[],"extraPaths":[],"options":{"backupRepoFiles":false}}' | Set-Content $configPath
+        Mock Get-Command { $null }
+        & $backup -DestinationRoot $destination -ConfigPath $configPath -BackupName 'session' -Force
+        $manifestPath = Join-Path $destination 'declarative-windows-backup\session\backup-manifest.json'
+        Test-Path $manifestPath | Should -BeTrue
+        (Get-Content $manifestPath -Raw | ConvertFrom-Json).manifestVersion | Should -Be 1
+    }
+
     It 'copies included siblings while excluding nested directories and filename patterns' {
         $source = Join-Path $TestDrive 'source'
         $destination = Join-Path $TestDrive 'copied'
@@ -58,5 +69,20 @@ Describe 'backup preflight guards' {
         Get-Content $manifest | Should -Be 'original manifest'
         Get-Content $content | Should -Be 'original content'
         @(Get-ChildItem $session.FullName).Count | Should -Be 2
+    }
+
+    It 'refuses a session created after the initial existence check' {
+        $destination = Join-Path $TestDrive 'late-collision'
+        $script:collisionSession = Join-Path $destination 'declarative-windows-backup\session'
+        $configPath = Join-Path $TestDrive 'late.json'
+        '{"knownFolders":[],"extraPaths":[]}' | Set-Content $configPath
+        Mock Get-Command {
+            New-Item -ItemType Directory -Path $script:collisionSession -Force | Out-Null
+            Set-Content (Join-Path $script:collisionSession 'backup-manifest.json') 'other session'
+            $null
+        }
+        { & $backup -DestinationRoot $destination -ConfigPath $configPath -BackupName 'session' -Force } | Should -Throw
+        Get-Content (Join-Path $script:collisionSession 'backup-manifest.json') | Should -Be 'other session'
+        @(Get-ChildItem $script:collisionSession).Count | Should -Be 1
     }
 }
