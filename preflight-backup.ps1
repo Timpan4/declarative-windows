@@ -86,7 +86,7 @@ function Test-IsSystemDrivePath {
     param([string]$Path)
 
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
-    $systemRoot = [System.IO.Path]::GetPathRoot($env:SystemDrive)
+    $systemRoot = [System.IO.Path]::GetPathRoot($env:SystemDrive.TrimEnd('\', '/') + '\')
     $pathRoot = [System.IO.Path]::GetPathRoot($resolvedPath)
     return $pathRoot -eq $systemRoot
 }
@@ -140,8 +140,8 @@ function Get-RelativePath {
         [Parameter(Mandatory)]
         [string]$BasePath
     )
-    $pathUri = New-Object System.Uri($Path)
-    $baseUri = New-Object System.Uri($BasePath)
+    $pathUri = New-Object System.Uri([System.IO.Path]::GetFullPath($Path))
+    $baseUri = New-Object System.Uri([System.IO.Path]::GetFullPath($BasePath).TrimEnd('\', '/') + '\')
     $relativeUri = $baseUri.MakeRelativeUri($pathUri)
     $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
     return $relativePath -replace '/', '\'
@@ -430,12 +430,12 @@ $manifest = New-BackupManifest `
         sourcePath = $effectiveConfigPath
         templateFallbackUsed = $effectiveConfigPath -eq (Resolve-Path $TemplateConfigPath).Path
     }) `
-    -Rules @($manifestRules) `
-    -RepoFiles @($manifestRepoFiles) `
+    -Rules $manifestRules.ToArray() `
+    -RepoFiles $manifestRepoFiles.ToArray() `
     -Exports ([ordered]@{
         wingetPath = if ($wingetExported) { $wingetExportPath } else { $null }
     }) `
-    -Failures @($failedRules)
+    -Failures $failedRules.ToArray()
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 8
 if ($PSCmdlet.ShouldProcess($ManifestPath, "Write backup manifest")) {
