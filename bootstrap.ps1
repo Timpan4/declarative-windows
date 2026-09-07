@@ -376,62 +376,68 @@ function Write-FailedInstallsReport {
     return $FailedInstallsLog
 }
 
+function Test-SophiaFramework {
+    param([string]$Path)
+
+    $requiredFiles = @(
+        'Sophia.ps1', 'Manifest\SophiaScript.psd1', 'Module\Sophia.psm1',
+        'Import-TabCompletion.ps1', 'Binaries\LGPO.exe'
+    )
+    foreach ($name in @('Get-Hash', 'InitialActions', 'PostActions', 'Set-KnownFolderPath', 'Set-Policy', 'Set-UserShellFolder', 'Show-Menu', 'Write-AdditionalKeys', 'Write-ExtensionKeys')) {
+        $requiredFiles += "Module\Private\$name.ps1"
+    }
+    foreach ($culture in @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'hu-HU', 'it-IT', 'pl-PL', 'pt-BR', 'ru-RU', 'tr-TR', 'uk-UA', 'zh-CN')) {
+        $requiredFiles += "Localizations\$culture\Sophia.psd1"
+    }
+    foreach ($file in $requiredFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $file) -PathType Leaf)) { return $false }
+    }
+    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Path 'Manifest\SophiaScript.psd1')
+    return $manifest.ModuleVersion -eq $SophiaVersion
+}
+
 function Get-SophiaScript {
-    if (Test-Path $SophiaScript) {
-        Write-Log "Sophia Script already extracted at $SophiaDir" -Level INFO
-        return $SophiaScript
-    }
-
-    Write-Log "Sophia Script not found; downloading v$SophiaVersion..." -Level INFO
-
-    $zipPath = Join-Path $SetupPath $SophiaZipName
-
+    $stagingPath = $null
     try {
+        if (Test-Path -LiteralPath $SophiaDir) {
+            if (-not (Test-SophiaFramework -Path $SophiaDir)) {
+                throw "Existing Sophia directory is incomplete or has the wrong version: $SophiaDir. Move it aside before retrying."
+            }
+            Write-Log "Sophia Script already extracted at $SophiaDir" -Level INFO
+            return $SophiaScript
+        }
+
+        $setupRoot = [IO.Path]::GetFullPath($SetupPath).TrimEnd('\')
+        $stagingPath = Join-Path $setupRoot ('.sophia-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $stagingPath -ErrorAction Stop | Out-Null
+        $zipPath = Join-Path $stagingPath $SophiaZipName
+        Write-Log "Downloading Sophia Script v$SophiaVersion..." -Level INFO
         Invoke-WebRequest -Uri $SophiaDownloadUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
-        Write-Log "Downloaded $SophiaZipName" -Level SUCCESS
-    }
-    catch {
-        Write-Log "Failed to download Sophia Script: $($_.Exception.Message)" -Level WARNING
-        return $null
-    }
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $stagingPath -ErrorAction Stop
 
-    try {
-        if (Test-Path $SophiaDir) {
-            Remove-Item -Path $SophiaDir -Recurse -Force
+        $extractedDir = Join-Path $stagingPath "Sophia_Script_for_Windows_11_v$SophiaVersion"
+        if (-not (Test-SophiaFramework -Path $extractedDir)) {
+            throw 'The pinned Sophia release is missing required framework files or has the wrong version.'
         }
-
-        Expand-Archive -Path $zipPath -DestinationPath $SetupPath -Force
-
-        # The zip extracts to a versioned subfolder; find Sophia.ps1 wherever it landed
-        $sophiaPs1 = Get-ChildItem -Path $SetupPath -Filter "Sophia.ps1" -Recurse -File |
-            Select-Object -First 1
-
-        if (-not $sophiaPs1) {
-            Write-Log "Sophia.ps1 not found after extraction" -Level WARNING
-            return $null
-        }
-
-        # Normalise to the known $SophiaDir path so the marker stays consistent
-        $extractedDir = $sophiaPs1.DirectoryName
-        if ($extractedDir -ne $SophiaDir) {
-            if (Test-Path $SophiaDir) { Remove-Item -Path $SophiaDir -Recurse -Force }
-            Rename-Item -Path $extractedDir -NewName (Split-Path $SophiaDir -Leaf)
-        }
-
+        # Publish only the validated release, without searching or removing neighboring setup files.
+        Move-Item -LiteralPath $extractedDir -Destination $SophiaDir -ErrorAction Stop
         Write-Log "Sophia Script extracted to $SophiaDir" -Level SUCCESS
         return $SophiaScript
     }
     catch {
-        Write-Log "Failed to extract Sophia Script: $($_.Exception.Message)" -Level WARNING
+        Write-Log "Failed to prepare Sophia Script: $($_.Exception.Message)" -Level WARNING
         return $null
     }
     finally {
-        if (Test-Path $zipPath) {
-            Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
+            $resolvedStagingPath = [IO.Path]::GetFullPath($stagingPath)
+            if (-not $resolvedStagingPath.StartsWith($setupRoot + '\.sophia-', [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Refusing to clean a Sophia staging path outside the setup directory.'
+            }
+            Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force -ErrorAction Stop
         }
     }
 }
-
 function Wait-ForNetwork {
     param(
         [int]$TimeoutSeconds = 300,
