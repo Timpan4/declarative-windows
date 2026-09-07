@@ -21,7 +21,7 @@ Describe 'registry path normalization' {
     }
 
     It 'rejects unsupported providers and hive lookalikes' {
-        foreach ($path in @('', 'C:\SOFTWARE', 'FileSystem::C:\SOFTWARE', 'Registry::C:\SOFTWARE', 'HKLMOther\SOFTWARE', 'HKLM:SOFTWARE', 'SOFTWARE')) {
+        foreach ($path in @('', 'C:\SOFTWARE', 'FileSystem::C:\SOFTWARE', 'Registry::C:\SOFTWARE', 'HKLMOther\SOFTWARE', 'HKLM:SOFTWARE', 'HKEY_CURRENT_USER:\Software', 'Registry::HKEY_LOCAL_MACHINE:\Software', 'SOFTWARE')) {
             { Normalize-RegistryPath $path } | Should -Throw
         }
     }
