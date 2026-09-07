@@ -30,3 +30,23 @@ Restore applies the longest matching source prefix first, matching both the exac
 root and descendants without case sensitivity. A similar folder name is not a
 match. Explicit mappings take precedence over automatic profile and OS-drive
 remapping. Manifests without `restoreTargets` retain those automatic fallbacks.
+
+## File verification
+
+`preflight-backup.ps1 -VerifyHashes` compares SHA256 hashes of every copied
+repository and content file against its source. A mismatch stops backup with an
+error. Excluded files are not part of the backup. Generated WinGet inventory files
+also receive hashes. The manifest and text report are metadata and do not hash
+themselves.
+
+The optional `verification` object records `algorithm: SHA256`, `status`, and a
+`files` array of session-relative `path` and `sha256` pairs. Only `status: verified`
+is accepted for restore. Restore checks all recorded hashes before writing,
+rejects missing or changed files, and refuses to copy files without a hash record.
+The option adds reads of every copied file and its source; it does not provide a
+snapshot of files that applications are still changing.
+
+Legacy manifests without this object remain restorable with an explicit warning
+that complete verification is unavailable. Any existing repository `sha256`
+values are validated before restore. Hashes detect corruption; the manifest is
+not signed and is not an authentication mechanism.

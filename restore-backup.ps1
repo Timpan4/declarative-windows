@@ -97,6 +97,7 @@ $manifest = Get-Content -Path $resolvedManifestPath -Raw | ConvertFrom-Json
 Assert-BackupManifest $manifest
 $actualBackupRoot = Split-Path -Parent $resolvedManifestPath
 $manifestBackupRoot = Get-BackupManifestRoot -Manifest $manifest
+Assert-BackupHashes -Manifest $manifest -BackupRoot $actualBackupRoot
 
 if (-not $DestinationProfileRoot) {
     $DestinationProfileRoot = $env:USERPROFILE

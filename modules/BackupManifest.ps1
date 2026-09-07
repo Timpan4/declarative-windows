@@ -270,6 +270,80 @@ function Assert-BackupPathsDisjoint {
     }
 }
 
+function Get-BackupTreeFiles {
+    param([string]$Root)
+    Assert-NoBackupReparsePoint $Root
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) { throw "Backup directory missing: $Root" }
+    $pending = New-Object 'System.Collections.Generic.Stack[string]'
+    $pending.Push($Root)
+    while ($pending.Count -gt 0) {
+        foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Cannot verify a reparse point in backup content: $($item.FullName)" }
+            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            else { $item }
+        }
+    }
+}
+
+function Get-VerifiedBackupFile {
+    param([string]$Path, [string]$BackupRoot, [string]$Source)
+    Assert-NoBackupReparsePoint $Path
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ($Source) {
+        Assert-NoBackupReparsePoint $Source
+        $sourceHash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256 -ErrorAction Stop).Hash
+        if ($hash -ne $sourceHash) { throw "Backup hash mismatch between source '$Source' and copy '$Path'." }
+    }
+    return [pscustomobject]@{ path = $Path.Substring($BackupRoot.TrimEnd('\').Length).TrimStart('\'); sha256 = $hash }
+}
+
+function Assert-BackupHashes {
+    param([object]$Manifest, [string]$BackupRoot)
+    if ($null -eq $Manifest.verification) {
+        # Older manifests recorded only repository-file hashes, without source comparison.
+        foreach ($entry in $Manifest.repoFiles) {
+            if ($null -ne $entry.sha256) {
+                $path = Resolve-BackupSourcePath $entry.backupPath $Manifest.backup.backupRoot $BackupRoot
+                if ($entry.sha256 -isnot [string] -or $entry.sha256 -notmatch '^[A-Fa-f0-9]{64}$' -or (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.sha256) {
+                    throw "Legacy backup hash validation failed: $path"
+                }
+            }
+        }
+        Write-Warning 'This legacy backup has no complete file verification record. Any stored repository hashes were checked; other content is unverified.'
+        return
+    }
+    $verification = $Manifest.verification
+    Assert-BackupObject $verification 'verification'
+    if ($verification.algorithm -ne 'SHA256' -or $verification.status -ne 'verified' -or $verification.files -isnot [array]) { throw 'Backup does not contain a successful SHA256 file verification record.' }
+    $verifiedPaths = @{}
+    foreach ($entry in $verification.files) {
+        Assert-BackupObject $entry 'verification.files'
+        if ($entry.sha256 -isnot [string] -or $entry.sha256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'verification.files.sha256 must contain a SHA256 digest.' }
+        $path = Resolve-ContainedBackupPath $entry.path $BackupRoot
+        if ($verifiedPaths.ContainsKey($path)) { throw "Duplicate verified backup path: $path" }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.sha256) { throw "Backup hash validation failed: $path" }
+        $verifiedPaths[$path] = $true
+    }
+    # Added files must not silently join a verified restore, including hidden files.
+    foreach ($directory in @('files', 'repo-files', 'exports')) {
+        $root = Join-Path $BackupRoot $directory
+        foreach ($file in Get-BackupTreeFiles $root) {
+            if (-not $verifiedPaths.ContainsKey($file.FullName)) { throw "Backup file has no verification record: $($file.FullName)" }
+        }
+    }
+    foreach ($entry in $Manifest.repoFiles) {
+        $path = Resolve-BackupSourcePath $entry.backupPath $Manifest.backup.backupRoot $BackupRoot
+        if (-not $verifiedPaths.ContainsKey($path)) { throw "Restore source has no verification record: $path" }
+    }
+    foreach ($entry in $Manifest.rules) {
+        if (-not $entry.success) { continue }
+        $root = Resolve-BackupSourcePath $entry.backupPath $Manifest.backup.backupRoot $BackupRoot
+        foreach ($file in Get-BackupTreeFiles $root) {
+            if (-not $verifiedPaths.ContainsKey($file.FullName)) { throw "Restore source has no verification record: $($file.FullName)" }
+        }
+    }
+}
+
 function New-BackupManifest {
     param(
         [Parameter(Mandatory)][object]$Machine,
@@ -280,10 +354,11 @@ function New-BackupManifest {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$RepoFiles,
         [Parameter(Mandatory)][object]$Exports,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Failures,
-        [hashtable]$RestoreTargets = @{}
+        [hashtable]$RestoreTargets = @{},
+        [object]$Verification
     )
 
-    return [ordered]@{
+    $manifest = [ordered]@{
         manifestVersion = 1
         createdAt = (Get-Date).ToString("o")
         machine = $Machine
@@ -296,4 +371,6 @@ function New-BackupManifest {
         failures = $Failures
         restoreTargets = $RestoreTargets
     }
+    if ($null -ne $Verification) { $manifest.verification = $Verification }
+    return $manifest
 }
