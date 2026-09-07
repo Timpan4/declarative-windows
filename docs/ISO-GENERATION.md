@@ -7,7 +7,7 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 - Windows 11 (25H2 or later) ISO
 - Windows ADK **or** a direct `oscdimg.exe` download URL
 - Administrator privileges
-- At least 10GB of free disk space
+- Free space for the expanded source files plus selected payload in both TEMP and the output location. The builder measures inputs before staging and combines the estimates when both locations share a volume. Filesystem and ISO metadata overhead and concurrent disk use can still exhaust space during a build.
 
 ## Basic Usage
 
@@ -29,13 +29,15 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 ## Parameters
 
 - `-SourceISO` (required): Path to the source Windows 11 ISO.
-- `-OutputISO` (required): Path for the generated ISO.
+- `-OutputISO` (required): New path for the generated ISO. Existing files and directories are rejected before staging. The output is published only after oscdimg succeeds, without replacing files created by another process.
 - `-SourceIsoHash` (optional): Expected SHA256 hash for the source ISO.
 - `-IsoLabel` (optional): ISO label passed to `oscdimg`.
 - `-OscdimgDownloadUrl` (optional): Direct URL to `oscdimg.exe` or a ZIP containing it.
 - `-KeepTemp` (optional): Retain temporary extraction files for debugging.
 
 ## ISO Contents
+
+Before staging, the builder prints the selected source and destination paths without reading configuration contents to the console. Only the declared setup scripts, runtime modules, apps.json, optional-apps.json when present, Sophia-Preset.ps1, config/registry.json and config/backup.template.json are selected. Other files in config, including ignored backup.json, restore.json and personal files, are excluded.
 
 The ISO generator injects files into the root and `sources\$OEM$` structure:
 
