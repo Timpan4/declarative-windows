@@ -6,6 +6,7 @@ Describe "autounattend.xml static checks" {
 
     It "runs bootstrap from C:\\Setup" {
         $fileContent | Should -Match "C:\\Setup\\bootstrap\.ps1"
+        ([xml]$fileContent).SelectSingleNode('//*[local-name()="CommandLine"]').InnerText | Should -Match 'powershell\.exe -NoProfile '
     }
 
     It "does not hardcode a disk or partition target" {
