@@ -32,7 +32,6 @@ function Get-SetupPayloadRelativePaths {
         'modules\BootstrapRun.ps1'
         'modules\WinGetInstall.ps1'
         'modules\BackupManifest.ps1'
-        'modules\StagedSetupPayload.ps1'
         'modules\DeclarativeConfig.ps1'
         'modules\Run-SophiaPreset.ps1'
         'config\registry.json'
