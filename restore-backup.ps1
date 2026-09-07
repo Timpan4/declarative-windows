@@ -113,8 +113,11 @@ if ($backupJsonEntry) {
     }
 }
 
+$originalOsDrive = $manifest.machine.osDrive
+$restoreTargetMap = Get-RestoreTargetMap -Manifest $manifest
+
 foreach ($repoFile in $manifest.repoFiles) {
-    $repoTargetRoot = [Environment]::ExpandEnvironmentVariables($manifest.repo.restorePath)
+    $repoTargetRoot = Resolve-RestoreTargetPath -Path $manifest.repo.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile
     $destination = Join-Path $repoTargetRoot $repoFile.relativePath
     $destinationParent = Split-Path -Path $destination -Parent
 
@@ -138,10 +141,6 @@ foreach ($repoFile in $manifest.repoFiles) {
     $restoreReport.Add([pscustomobject]@{ type = "repoFile"; path = $destination; status = "restored" })
 }
 
-# Build restore target map from manifest
-$originalOsDrive = $manifest.machine.osDrive
-$restoreTargetMap = Get-RestoreTargetMap -Manifest $manifest
-
 foreach ($rule in $manifest.rules) {
     if (-not $rule.success) {
         continue
@@ -152,7 +151,7 @@ foreach ($rule in $manifest.rules) {
     }
 
     $sourcePath = Resolve-BackupSourcePath -Path $rule.backupPath -ManifestBackupRoot $manifestBackupRoot -ActualBackupRoot $actualBackupRoot
-    $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap
+    $targetPath = Resolve-RestoreTargetPath -Path $rule.restorePath -ProfileRoot $DestinationProfileRoot -OriginalOsDrive $originalOsDrive -RestoreTargetMap $restoreTargetMap -OriginalProfileRoot $manifest.machine.userProfile
     $success = Copy-Tree -Source $sourcePath -Destination $targetPath -RobocopyMode $Mode
     $restoreReport.Add([pscustomobject]@{
         type = "content"

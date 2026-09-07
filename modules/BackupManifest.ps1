@@ -85,15 +85,22 @@ function Resolve-RestoreTargetPath {
         [string]$Path,
         [string]$ProfileRoot,
         [string]$OriginalOsDrive,
-        [hashtable]$RestoreTargetMap
+        [hashtable]$RestoreTargetMap,
+        [string]$OriginalProfileRoot
     )
 
     $expandedPath = [Environment]::ExpandEnvironmentVariables($Path)
 
     if ($ProfileRoot) {
-        $currentProfile = [Environment]::ExpandEnvironmentVariables("%USERPROFILE%")
-        if ($expandedPath.StartsWith($currentProfile, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $relativePath = $expandedPath.Substring($currentProfile.Length).TrimStart('\')
+        # Legacy manifests without profile metadata retain the current-profile fallback.
+        $sourceProfile = if ($OriginalProfileRoot) { $OriginalProfileRoot } else { $env:USERPROFILE }
+        $sourceProfile = [Environment]::ExpandEnvironmentVariables($sourceProfile).Replace('/', '\').TrimEnd('\')
+        $profilePath = $expandedPath.Replace('/', '\')
+        if ($sourceProfile -and $profilePath.TrimEnd('\').Equals($sourceProfile, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $ProfileRoot
+        }
+        if ($sourceProfile -and $profilePath.StartsWith($sourceProfile + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $profilePath.Substring($sourceProfile.Length).TrimStart('\')
             return Join-Path $ProfileRoot $relativePath
         }
     }
