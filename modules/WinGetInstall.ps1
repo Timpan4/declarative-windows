@@ -1,15 +1,35 @@
 function Get-WingetPackageIdsFromJson {
     param([string]$Path)
 
-    $content = Get-Content -Path $Path -Raw
-    $data = $content | ConvertFrom-Json
+    try {
+        $content = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $data = ConvertFrom-Json -InputObject $content -ErrorAction Stop
+    }
+    catch {
+        throw "Invalid WinGet manifest '${Path}': $($_.Exception.Message)"
+    }
+
+    if (-not $content.TrimStart().StartsWith('{') -or $data -isnot [pscustomobject] -or
+        $null -eq $data.PSObject.Properties['Sources'] -or $data.Sources -isnot [array]) {
+        throw "Invalid WinGet manifest '${Path}': expected an object with a Sources array."
+    }
+
     $packageIds = @()
 
-    foreach ($source in $data.Sources) {
-        foreach ($package in $source.Packages) {
-            if ($package.PackageIdentifier) {
-                $packageIds += $package.PackageIdentifier
+    for ($sourceIndex = 0; $sourceIndex -lt $data.Sources.Count; $sourceIndex++) {
+        $source = $data.Sources[$sourceIndex]
+        if ($source -isnot [pscustomobject] -or $null -eq $source.PSObject.Properties['Packages'] -or
+            $source.Packages -isnot [array]) {
+            throw "Invalid WinGet manifest '${Path}': Sources[$sourceIndex] must contain a Packages array."
+        }
+
+        for ($packageIndex = 0; $packageIndex -lt $source.Packages.Count; $packageIndex++) {
+            $package = $source.Packages[$packageIndex]
+            if ($package -isnot [pscustomobject] -or $null -eq $package.PSObject.Properties['PackageIdentifier'] -or
+                $package.PackageIdentifier -isnot [string] -or [string]::IsNullOrWhiteSpace($package.PackageIdentifier)) {
+                throw "Invalid WinGet manifest '${Path}': Sources[$sourceIndex].Packages[$packageIndex].PackageIdentifier must be a non-empty string."
             }
+            $packageIds += $package.PackageIdentifier
         }
     }
 
@@ -296,12 +316,6 @@ function Invoke-WingetManifestInstall {
     try {
         Write-Log "Found $ManifestLabel at $ManifestPath" -Level INFO
 
-        if (-not (Wait-ForNetwork)) {
-            Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "Network unavailable; skipped install"
-            Set-StepState -StepId $StepId -Status "failed" -Message "Network unavailable"
-            return $false
-        }
-
         $packageIds = Get-WingetPackageIdsFromJson -Path $ManifestPath
         if (-not $packageIds -or $packageIds.Count -eq 0) {
             Write-Log "$ManifestLabel contains no packages to install" -Level WARNING
@@ -353,6 +367,7 @@ function Invoke-WingetManifestInstall {
             Write-Log "$ManifestLabel changed since last WinGet run" -Level INFO
         }
 
+        # Let WinGet contact the required source and installer endpoints only when packages are missing.
         Write-Log "Keep this window open. Some installers may open their own windows or ask for confirmation." -Level INFO
         Write-Log "Installing $($missingPackages.Count) missing packages from $ManifestLabel" -Level INFO
         Update-SetupProgress -Phase 'Installing packages' -Status ("Installing 1 of {0}" -f $missingPackages.Count) -CurrentPackage '' -PackageIndex 0 -PackageTotal $missingPackages.Count -Mode 'admin'
@@ -460,8 +475,8 @@ function Invoke-WingetManifestInstall {
     }
     catch {
         Write-Log "ERROR during WinGet install from ${ManifestLabel}: $($_.Exception.Message)" -Level ERROR
-        Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "WinGet install failed"
-        Set-StepState -StepId $StepId -Status "failed" -Message "WinGet install failed"
+        Add-SummaryItem -Step $SummaryStep -Status "FAIL" -Message "WinGet install failed: $($_.Exception.Message)"
+        Set-StepState -StepId $StepId -Status "failed" -Message "WinGet install failed: $($_.Exception.Message)"
         return $false
     }
 }
