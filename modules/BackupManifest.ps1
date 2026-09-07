@@ -31,8 +31,14 @@ function Get-RestoreTargetMap {
 
     $restoreTargetMap = @{}
     if ($Manifest.restoreTargets) {
-        foreach ($prop in $Manifest.restoreTargets.PSObject.Properties) {
-            $restoreTargetMap[$prop.Name] = $prop.Value
+        $targets = $Manifest.restoreTargets
+        $names = if ($targets -is [Collections.IDictionary]) { $targets.Keys } else { $targets.PSObject.Properties.Name }
+        foreach ($name in $names) {
+            # repoPath selects the repository root; it is not a source-prefix mapping.
+            if ($name -eq 'repoPath') { continue }
+            $key = Get-CanonicalBackupPath $name
+            if ($restoreTargetMap.ContainsKey($key)) { throw "Duplicate restore mapping: $key" }
+            $restoreTargetMap[$key] = Get-CanonicalBackupPath $targets.$name
         }
     }
 
@@ -116,7 +122,17 @@ function Resolve-RestoreTargetPath {
         [string]$OriginalProfileRoot
     )
 
-    $expandedPath = [Environment]::ExpandEnvironmentVariables($Path)
+    $expandedPath = Get-CanonicalBackupPath $Path
+    # Explicit mappings take priority over automatic profile and drive remapping.
+    foreach ($key in @($RestoreTargetMap.Keys | Sort-Object Length -Descending)) {
+        $sourceRoot = Get-CanonicalBackupPath $key
+        if (Test-BackupPathWithin $expandedPath $sourceRoot) {
+            $targetRoot = Get-CanonicalBackupPath $RestoreTargetMap[$key]
+            $suffix = $expandedPath.Substring($sourceRoot.TrimEnd('\').Length).TrimStart('\')
+            if (-not $suffix) { return $targetRoot }
+            return Join-Path $targetRoot $suffix
+        }
+    }
 
     if ($ProfileRoot) {
         # Legacy manifests without profile metadata retain the current-profile fallback.
@@ -137,31 +153,7 @@ function Resolve-RestoreTargetPath {
         if ($expandedPath.StartsWith($osDriveSlash, [System.StringComparison]::OrdinalIgnoreCase)) {
             $currentOsDriveSlash = $env:SystemDrive + "\"
             $relativePath = $expandedPath.Substring($OriginalOsDrive.Length)
-            $newPath = $currentOsDriveSlash + $relativePath.TrimStart('\')
-
-            foreach ($key in $RestoreTargetMap.Keys) {
-                if ($newPath -and $RestoreTargetMap[$key]) {
-                    $mapKeySlash = $key + "\"
-                    $mapValueSlash = $RestoreTargetMap[$key] + "\"
-                    if ($newPath.StartsWith($mapKeySlash, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        return $newPath.Replace($mapKeySlash, $mapValueSlash)
-                    }
-                }
-            }
-
-            return $newPath
-        }
-    }
-
-    if ($RestoreTargetMap -and $RestoreTargetMap.Count -gt 0) {
-        foreach ($key in $RestoreTargetMap.Keys) {
-            if ($key -and $RestoreTargetMap[$key]) {
-                $keySlash = $key + "\"
-                if ($expandedPath.StartsWith($keySlash, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $valueSlash = $RestoreTargetMap[$key] + "\"
-                    return $expandedPath.Replace($keySlash, $valueSlash)
-                }
-            }
+            return $currentOsDriveSlash + $relativePath.TrimStart('\')
         }
     }
 
@@ -229,6 +221,7 @@ function Assert-BackupConfiguration {
     if ($null -ne $Config.restoreTargets) {
         Assert-BackupObject $Config.restoreTargets 'restoreTargets'
         foreach ($property in $Config.restoreTargets.PSObject.Properties) { $null = Get-CanonicalBackupPath $property.Value }
+        $null = Get-RestoreTargetMap $Config
     }
 }
 
@@ -286,7 +279,8 @@ function New-BackupManifest {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Rules,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$RepoFiles,
         [Parameter(Mandatory)][object]$Exports,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Failures
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Failures,
+        [hashtable]$RestoreTargets = @{}
     )
 
     return [ordered]@{
@@ -300,5 +294,6 @@ function New-BackupManifest {
         repoFiles = $RepoFiles
         exports = $Exports
         failures = $Failures
+        restoreTargets = $RestoreTargets
     }
 }

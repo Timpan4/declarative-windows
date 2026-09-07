@@ -53,6 +53,7 @@ Describe "portable backup paths" {
         $destination = Join-Path $TestDrive 'backup'
         $movedSession = Join-Path $TestDrive 'moved session'
         $restoredRepo = Join-Path $TestDrive 'restored-repo'
+        $restoredContent = Join-Path $TestDrive 'restored-content'
         New-Item -ItemType Directory -Path $fixtureRepo, $source, (Join-Path $fixtureRepo 'config') -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot 'modules') -Destination $fixtureRepo -Recurse
         # Only synthetic fixtures are used. Remove elevation requirements in these test copies.
@@ -66,7 +67,7 @@ Describe "portable backup paths" {
         @{
             knownFolders = @()
             extraPaths = @(@{ enabled = $true; path = $source; label = 'example'; required = $true })
-            restoreTargets = @{ repoPath = $restoredRepo }
+            restoreTargets = @{ repoPath = $restoredRepo; $source = $restoredContent }
             options = @{ backupRepoFiles = $true }
             excludePatterns = @()
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $fixtureRepo 'config\backup.template.json')
@@ -77,11 +78,12 @@ Describe "portable backup paths" {
         $manifest = Get-Content -LiteralPath (Join-Path $session 'backup-manifest.json') -Raw | ConvertFrom-Json
         $manifest.rules[0].backupPath | Should -Be 'files\extra-example'
         $manifest.repoFiles[0].backupPath | Should -Be 'repo-files\apps.json'
+        $manifest.restoreTargets.$source | Should -Be $restoredContent
         Move-Item -LiteralPath $session -Destination $movedSession
         Remove-Item -LiteralPath (Join-Path $source 'example.txt')
 
         & (Join-Path $fixtureRepo 'restore-backup.ps1') -ManifestPath (Join-Path $movedSession 'backup-manifest.json')
-        Get-Content -LiteralPath (Join-Path $source 'example.txt') -Raw | Should -Be "portable content`r`n"
+        Get-Content -LiteralPath (Join-Path $restoredContent 'example.txt') -Raw | Should -Be "portable content`r`n"
         Get-Content -LiteralPath (Join-Path $restoredRepo 'apps.json') -Raw | Should -Be "{`"packages`":[]}`r`n"
     }
 }

@@ -478,7 +478,8 @@ $manifest = New-BackupManifest `
     -Exports ([ordered]@{
         wingetPath = if ($wingetExported) { $wingetExportPath } else { $null }
     }) `
-    -Failures $failedRules.ToArray()
+    -Failures $failedRules.ToArray() `
+    -RestoreTargets (Get-RestoreTargetMap $config)
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 8
 if ($PSCmdlet.ShouldProcess($ManifestPath, "Write backup manifest")) {
