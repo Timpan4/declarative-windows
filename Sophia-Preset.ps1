@@ -20,8 +20,8 @@
 	USAGE:
 	1. Download Sophia Script for Windows 11 from GitHub releases
 	2. Extract the archive
-	3. Copy this preset file into the extracted Sophia Script folder
-	4. Run: .\Sophia.ps1 -Preset .\Sophia-Preset.ps1
+	3. Run bootstrap.ps1 from this repository in an elevated Windows PowerShell session.
+	   Bootstrap initializes the pinned framework and runs this preset through modules\Run-SophiaPreset.ps1.
 #>
 
 #region Privacy & Telemetry

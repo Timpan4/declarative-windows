@@ -438,6 +438,24 @@ function Get-SophiaScript {
         }
     }
 }
+function Invoke-SophiaPreset {
+    param([string]$FrameworkRoot, [string]$PresetPath)
+
+    $completionPath = [IO.Path]::GetTempFileName()
+    try {
+        $runner = Join-Path $PSScriptRoot 'modules\Run-SophiaPreset.ps1'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runner -FrameworkRoot $FrameworkRoot -PresetPath $PresetPath -CompletionPath $completionPath
+        $exitCode = $LASTEXITCODE
+        $completion = [string](Get-Content -LiteralPath $completionPath -Raw)
+        if ($exitCode -ne 0 -or $completion -notmatch '^completed\s*$') {
+            throw "Sophia preset did not complete successfully (exit code $exitCode)."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $completionPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Wait-ForNetwork {
     param(
         [int]$TimeoutSeconds = 300,
@@ -1385,10 +1403,6 @@ try {
     if ($OptionalAppsOnly) {
         Write-Log "Step 3: Skipping Sophia (optional apps only mode)" -Level INFO
     }
-    elseif (-not (Should-RunStep -StepId $stepId)) {
-        Write-Log "Step 3: Skipping Sophia (already completed)" -Level INFO
-        Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Skipped (already completed)"
-    }
     elseif ($DryRun) {
         Write-Log "Step 3: Dry run - skipping Sophia Script" -Level WARNING
         Add-SummaryItem -Step "Sophia" -Status "WARN" -Message "Dry run: Sophia Script skipped"
@@ -1402,12 +1416,14 @@ try {
     }
     else {
         $presetHash = (Get-FileHash -Path $SophiaPreset -Algorithm SHA256).Hash
+        # Markers from the former stock-preset invocation do not prove custom actions ran.
+        $expectedMarker = "custom-preset-v1:$presetHash"
         $markerHash = $null
         if (Test-Path $SophiaMarker) {
             $markerHash = (Get-Content -Path $SophiaMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
         }
 
-        if ($markerHash -and $markerHash -eq $presetHash) {
+        if ($markerHash -and $markerHash -eq $expectedMarker -and -not $Force) {
             Write-Log "Sophia Script already applied; skipping" -Level INFO
             Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Already applied"
             Set-StepState -StepId $stepId -Status "done" -Message "Already applied"
@@ -1423,29 +1439,12 @@ try {
             }
             else {
                 try {
-                    # Copy preset into the Sophia directory and run it through the framework
-                    $presetInSophiaDir = Join-Path $SophiaDir (Split-Path $SophiaPreset -Leaf)
-                    Copy-Item -Path $SophiaPreset -Destination $presetInSophiaDir -Force
-
                     Write-Log "Running Sophia Script v$SophiaVersion with preset..." -Level INFO
-                    $global:LASTEXITCODE = $null
-
-                    & powershell.exe -ExecutionPolicy Bypass -File $sophiaFramework -Preset $presetInSophiaDir
-
-                    $exitCode = $global:LASTEXITCODE
-
-                    if ($? -and ($null -eq $exitCode -or $exitCode -eq 0)) {
-                        Write-Log "Sophia Script execution completed" -Level SUCCESS
-                        Set-Content -Path $SophiaMarker -Value $presetHash -Force
-                        Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Sophia preset applied"
-                        Set-StepState -StepId $stepId -Status "done" -Message "Sophia preset applied"
-                    }
-                    else {
-                        Write-Log "Sophia Script completed with exit code: $exitCode" -Level WARNING
-                        Add-FailedItem -Category "Sophia Script" -Item "Sophia-Preset.ps1" -Reason "Exited with code $exitCode"
-                        Add-SummaryItem -Step "Sophia" -Status "WARN" -Message "Sophia completed with warnings (exit $exitCode) - see Failed Installs.txt"
-                        Set-StepState -StepId $stepId -Status "failed" -Message "Sophia exit code $exitCode"
-                    }
+                    Invoke-SophiaPreset -FrameworkRoot $SophiaDir -PresetPath $SophiaPreset
+                    Write-Log "Sophia Script execution completed" -Level SUCCESS
+                    Set-Content -Path $SophiaMarker -Value $expectedMarker -Force
+                    Add-SummaryItem -Step "Sophia" -Status "OK" -Message "Sophia preset applied"
+                    Set-StepState -StepId $stepId -Status "done" -Message "Sophia preset applied"
                 }
                 catch {
                     Write-Log "ERROR during Sophia Script execution: $($_.Exception.Message)" -Level ERROR
