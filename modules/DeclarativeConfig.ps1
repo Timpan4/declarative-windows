@@ -9,9 +9,9 @@ function Normalize-RegistryPath {
         HKCC = 'HKEY_CURRENT_CONFIG'
     }
 
-    if ($Path -match '^(?:Registry::)?(HKLM|HKCU|HKCR|HKU|HKCC|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG)(?::)?(\\.*)?$') {
-        $hive = $Matches[1].ToUpperInvariant()
-        $subkey = $Matches[2]
+    if ($Path -match '^(?:Registry::)?(?:(?<hive>HKLM|HKCU|HKCR|HKU|HKCC):?|(?<hive>HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG))(?<subkey>\\.*)?$') {
+        $hive = $Matches.hive.ToUpperInvariant()
+        $subkey = $Matches.subkey
         if ($hives.ContainsKey($hive)) { $hive = $hives[$hive] }
         return "Registry::$hive$subkey"
     }
