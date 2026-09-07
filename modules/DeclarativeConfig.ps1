@@ -45,37 +45,59 @@ function Invoke-RegistryConfig {
             Applied = 0
             Skipped = 0
             Failed = 0
+            Failures = @()
         }
     }
 
     $applied = 0
     $skipped = 0
     $failed = 0
+    $failures = [System.Collections.Generic.List[object]]::new()
+    $entryIndex = 0
 
     foreach ($entry in $entries) {
+        $entryIndex++
+        $reason = 'Registry entry requires non-empty string fields: path, name, type'
         try {
-            if (-not $entry.path -or -not $entry.name -or -not $entry.type) {
-                throw "Registry entry missing required fields (path, name, type)"
+            if ($entry.path -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.path) -or
+                $entry.name -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.name) -or
+                $entry.type -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.type)) {
+                throw $reason
             }
 
+            $reason = 'Unsupported registry path'
             $registryPath = Normalize-RegistryPath -Path $entry.path
+            $reason = 'Unsupported registry value type; use DWORD or STRING'
             $valueType = Convert-RegistryType -Type $entry.type
+            $reason = 'Registry entry requires a non-null value'
+            if ($null -eq $entry.PSObject.Properties['value'] -or $null -eq $entry.value) {
+                throw $reason
+            }
             $desiredValue = $entry.value
 
             if ($valueType -eq "DWord") {
-                $desiredValue = [int]$desiredValue
+                $reason = 'DWORD value must be an integer or integer string in the Int32 range'
+                $parsedValue = 0
+                if (($desiredValue -isnot [int] -and $desiredValue -isnot [long] -and $desiredValue -isnot [string]) -or
+                    -not [int]::TryParse([string]$desiredValue, [ref]$parsedValue)) {
+                    throw $reason
+                }
+                $desiredValue = $parsedValue
             }
             else {
-                $desiredValue = [string]$desiredValue
+                $reason = 'STRING value must be a string; an empty string is allowed'
+                if ($desiredValue -isnot [string]) { throw $reason }
             }
 
-            if (-not (Test-Path -LiteralPath $registryPath)) {
+            $reason = 'Could not inspect registry key'
+            if (-not (Test-Path -LiteralPath $registryPath -ErrorAction Stop)) {
                 if ($DryRun) {
                     $skipped++
                     continue
                 }
 
-                New-Item -Path $registryPath -Force | Out-Null
+                $reason = 'Could not create registry key'
+                New-Item -Path $registryPath -Force -ErrorAction Stop | Out-Null
             }
 
             $valueName = if ($entry.name -eq "(Default)") { "" } else { $entry.name }
@@ -103,16 +125,24 @@ function Invoke-RegistryConfig {
                 continue
             }
 
+            $reason = 'Could not write registry value'
             if ($entry.name -eq "(Default)") {
-                Set-Item -LiteralPath $registryPath -Value $desiredValue -Force
+                Set-Item -LiteralPath $registryPath -Value $desiredValue -Force -ErrorAction Stop
             }
             else {
-                New-ItemProperty -LiteralPath $registryPath -Name $entry.name -Value $desiredValue -PropertyType $valueType -Force | Out-Null
+                New-ItemProperty -LiteralPath $registryPath -Name $entry.name -Value $desiredValue -PropertyType $valueType -Force -ErrorAction Stop | Out-Null
             }
             $applied++
         }
         catch {
             $failed++
+            $failures.Add([pscustomobject]@{
+                Index = $entryIndex
+                Path = $entry.path
+                Name = $entry.name
+                Reason = $reason
+                Category = [string]$_.CategoryInfo.Category
+            })
         }
     }
 
@@ -120,6 +150,7 @@ function Invoke-RegistryConfig {
         Applied = $applied
         Skipped = $skipped
         Failed = $failed
+        Failures = $failures.ToArray()
     }
 }
 
