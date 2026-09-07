@@ -1,15 +1,22 @@
 function Normalize-RegistryPath {
     param([string]$Path)
 
-    if ($Path -like "Registry::*") {
-        return $Path
+    $hives = @{
+        HKLM = 'HKEY_LOCAL_MACHINE'
+        HKCU = 'HKEY_CURRENT_USER'
+        HKCR = 'HKEY_CLASSES_ROOT'
+        HKU = 'HKEY_USERS'
+        HKCC = 'HKEY_CURRENT_CONFIG'
     }
 
-    if ($Path -match '^(HKLM|HKCU|HKCR|HKU|HKCC)') {
-        return "Registry::$Path"
+    if ($Path -match '^(?:Registry::)?(HKLM|HKCU|HKCR|HKU|HKCC|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG)(?::)?(\\.*)?$') {
+        $hive = $Matches[1].ToUpperInvariant()
+        $subkey = $Matches[2]
+        if ($hives.ContainsKey($hive)) { $hive = $hives[$hive] }
+        return "Registry::$hive$subkey"
     }
 
-    return $Path
+    throw "Unsupported registry path: $Path"
 }
 
 function Convert-RegistryType {
