@@ -18,3 +18,15 @@ restore write. Traversal, rooted repository-relative paths, alternate streams,
 and reparse points in path ancestors are rejected. For a junction or symbolic
 link root, configure its physical target folder. Robocopy excludes junctions
 within copied trees. Backup source and session paths must not overlap.
+
+## Restore mappings
+
+In backup configuration, `restoreTargets.repoPath` selects the repository restore
+root. Other `restoreTargets` entries map an absolute source folder to an absolute
+destination folder. Environment variables expand when the backup is made; the
+manifest persists the normalized mappings separately from `repo.restorePath`.
+
+Restore applies the longest matching source prefix first, matching both the exact
+root and descendants without case sensitivity. A similar folder name is not a
+match. Explicit mappings take precedence over automatic profile and OS-drive
+remapping. Manifests without `restoreTargets` retain those automatic fallbacks.
