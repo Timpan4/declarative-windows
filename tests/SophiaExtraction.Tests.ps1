@@ -64,4 +64,14 @@ Describe 'isolated Sophia release extraction' {
         Get-Content -LiteralPath $SophiaScript | Should -Be 'existing script'
         Should -Invoke Invoke-WebRequest -Times 0 -Exactly
     }
+
+    It 'preserves the preparation outcome when staging cleanup fails' {
+        Mock Remove-Item { throw 'Synthetic locked staging directory' }
+        Get-SophiaScript | Should -Be $SophiaScript
+        Get-Content -LiteralPath $SophiaScript | Should -Be 'fixture only'
+        # A failed preparation still returns null even if its cleanup also fails.
+        $SophiaDir = Join-Path $SetupPath 'second-install'
+        Mock Expand-Archive { throw 'Synthetic extraction failure' }
+        Get-SophiaScript | Should -BeNullOrEmpty
+    }
 }

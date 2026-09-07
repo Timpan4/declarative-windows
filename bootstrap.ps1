@@ -429,12 +429,17 @@ function Get-SophiaScript {
         return $null
     }
     finally {
-        if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
-            $resolvedStagingPath = [IO.Path]::GetFullPath($stagingPath)
-            if (-not $resolvedStagingPath.StartsWith($setupRoot + '\.sophia-', [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Refusing to clean a Sophia staging path outside the setup directory.'
+        try {
+            if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
+                $resolvedStagingPath = [IO.Path]::GetFullPath($stagingPath)
+                if (-not $resolvedStagingPath.StartsWith($setupRoot + '\.sophia-', [StringComparison]::OrdinalIgnoreCase)) {
+                    throw 'Refusing to clean a Sophia staging path outside the setup directory.'
+                }
+                Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force -ErrorAction Stop
             }
-            Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Sophia staging cleanup failed: $($_.Exception.Message)" -Level WARNING
         }
     }
 }
