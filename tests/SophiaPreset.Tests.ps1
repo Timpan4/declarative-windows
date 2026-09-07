@@ -21,13 +21,13 @@ Describe 'selected Sophia preset execution' {
         $SophiaScript = Join-Path $SophiaDir 'Sophia.ps1'
         $SophiaPreset = Join-Path $fixture 'selected.ps1'
         $SophiaMarker = Join-Path $fixture 'sophia.completed'
-        $SophiaVersion = '7.1.4'
+        $SophiaVersion = '7.3.0'
         $OptionalAppsOnly = $false
         $DryRun = $false
         $Force = $false
         $stepId = 'sophia'
-        New-Item -ItemType Directory -Path (Join-Path $SophiaDir 'Manifest'), (Join-Path $SophiaDir 'Module\Private') -Force | Out-Null
-        Set-Content -LiteralPath (Join-Path $SophiaDir 'Manifest\SophiaScript.psd1') -Value "@{ RootModule = '..\Module\Sophia.psm1'; ModuleVersion = '7.1.4' }"
+        New-Item -ItemType Directory -Path (Join-Path $SophiaDir 'Module\Manifest'), (Join-Path $SophiaDir 'Module\Private') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $SophiaDir 'Module\Manifest\SophiaScript.psd1') -Value "@{ RootModule = '..\Sophia.psm1'; ModuleVersion = '7.3.0' }"
         Set-Content -LiteralPath (Join-Path $SophiaDir 'Module\Sophia.psm1') -Value 'function CustomAction { Set-Content -LiteralPath (Join-Path $env:DW_SOPHIA_FIXTURE ''custom-ran'') -Value ''selected'' }'
         Set-Content -LiteralPath (Join-Path $SophiaDir 'Module\Private\InitialActions.ps1') -Value 'function InitialActions { Set-Content -LiteralPath (Join-Path $env:DW_SOPHIA_FIXTURE ''initialized'') -Value ''yes'' }'
         Set-Content -LiteralPath $SophiaScript -Value 'throw ''Stock defaults must never run'''
@@ -43,7 +43,7 @@ Describe 'selected Sophia preset execution' {
         . $runSophiaStep
         Get-Content -LiteralPath (Join-Path $fixture 'initialized') | Should -Be 'yes'
         Get-Content -LiteralPath (Join-Path $fixture 'custom-ran') | Should -Be 'selected'
-        Get-Content -LiteralPath $SophiaMarker | Should -Be ('custom-preset-v1:' + (Get-FileHash $SophiaPreset).Hash)
+        Get-Content -LiteralPath $SophiaMarker | Should -Be ('custom-preset-v1:7.3.0:' + (Get-FileHash $SophiaPreset).Hash)
         Should -Invoke Set-StepState -Times 1 -ParameterFilter { $Status -eq 'done' }
     }
 

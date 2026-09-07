@@ -19,7 +19,7 @@ Before reinstall, you can also run a declarative backup workflow that preserves 
 
 ## What Windows versions are supported?
 
-Windows 11 only (24H2 or later). Windows 10 is not supported.
+Windows 11 only (25H2 or later). Windows 10 is not supported.
 
 ## Do I need to create a custom ISO?
 

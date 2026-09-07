@@ -12,7 +12,7 @@ $Global:Failed = $false
 
 try {
     # Use the pinned framework's initialization contract, without running its stock preset.
-    Import-Module -Name (Join-Path $FrameworkRoot 'Manifest\SophiaScript.psd1') -Force -ErrorAction Stop
+    Import-Module -Name (Join-Path $FrameworkRoot 'Module\Manifest\SophiaScript.psd1') -Force -ErrorAction Stop
     Get-ChildItem -LiteralPath (Join-Path $FrameworkRoot 'Module\Private') -Filter '*.ps1' -File -ErrorAction Stop |
         ForEach-Object { . $_.FullName }
     InitialActions

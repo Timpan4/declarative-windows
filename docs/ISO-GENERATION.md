@@ -4,7 +4,7 @@ This guide explains how to build a custom Windows 11 ISO with declarative-window
 
 ## Prerequisites
 
-- Windows 11 (24H2 or later) ISO
+- Windows 11 (25H2 or later) ISO
 - Windows ADK **or** a direct `oscdimg.exe` download URL
 - Administrator privileges
 - At least 10GB of free disk space

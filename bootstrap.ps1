@@ -45,9 +45,9 @@ $StateFile = Join-Path $SetupPath "state.json"
 $ProgressFile = Join-Path $SetupPath "progress.json"
 $CanonicalRepoPath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "declarative-windows"
 $CanonicalBootstrap = Join-Path $CanonicalRepoPath "bootstrap.ps1"
-$SophiaDir = Join-Path $SetupPath "Sophia-Script"
+$SophiaVersion = '7.3.0'
+$SophiaDir = Join-Path $SetupPath "Sophia-Script-$SophiaVersion"
 $SophiaScript = Join-Path $SophiaDir "Sophia.ps1"
-$SophiaVersion = "7.1.4"
 $SophiaZipName = "Sophia.Script.for.Windows.11.v$SophiaVersion.zip"
 $SophiaDownloadUrl = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$SophiaVersion/$SophiaZipName"
 $FailedInstallsLog = Join-Path $SetupPath "failed-installs.log"
@@ -380,19 +380,19 @@ function Test-SophiaFramework {
     param([string]$Path)
 
     $requiredFiles = @(
-        'Sophia.ps1', 'Manifest\SophiaScript.psd1', 'Module\Sophia.psm1',
-        'Import-TabCompletion.ps1', 'Binaries\LGPO.exe'
+        'Sophia.ps1', 'Module\Manifest\SophiaScript.psd1', 'Module\Sophia.psm1',
+        'Import-TabCompletion.ps1', 'Module\Binaries\LGPO.exe', 'Module\Private\WinAPI.ps1'
     )
     foreach ($name in @('Get-Hash', 'InitialActions', 'PostActions', 'Set-KnownFolderPath', 'Set-Policy', 'Set-UserShellFolder', 'Show-Menu', 'Write-AdditionalKeys', 'Write-ExtensionKeys')) {
         $requiredFiles += "Module\Private\$name.ps1"
     }
     foreach ($culture in @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'hu-HU', 'it-IT', 'pl-PL', 'pt-BR', 'ru-RU', 'tr-TR', 'uk-UA', 'zh-CN')) {
-        $requiredFiles += "Localizations\$culture\Sophia.psd1"
+        $requiredFiles += "Module\Localizations\$culture\Sophia.psd1"
     }
     foreach ($file in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $Path $file) -PathType Leaf)) { return $false }
     }
-    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Path 'Manifest\SophiaScript.psd1')
+    $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $Path 'Module\Manifest\SophiaScript.psd1')
     return $manifest.ModuleVersion -eq $SophiaVersion
 }
 
@@ -1422,7 +1422,7 @@ try {
     else {
         $presetHash = (Get-FileHash -Path $SophiaPreset -Algorithm SHA256).Hash
         # Markers from the former stock-preset invocation do not prove custom actions ran.
-        $expectedMarker = "custom-preset-v1:$presetHash"
+        $expectedMarker = "custom-preset-v1:${SophiaVersion}:$presetHash"
         $markerHash = $null
         if (Test-Path $SophiaMarker) {
             $markerHash = (Get-Content -Path $SophiaMarker -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()

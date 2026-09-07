@@ -18,7 +18,7 @@ Configuration files and documentation are already in place.
 
 ## 🪟 Windows Version Support
 
-**Supported:** Windows 11 (24H2 or later) ONLY
+**Supported:** Windows 11 (25H2 or later) ONLY
 
 **Not Supported:** Windows 10
 
