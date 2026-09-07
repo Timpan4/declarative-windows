@@ -26,6 +26,7 @@ Describe 'WinGet manifest preflight' {
         Mock Update-SetupProgress { }
         Mock Add-FailedItem { }
         Mock Wait-ForNetwork { throw 'Generic network probe must not run' }
+        Mock Assert-WingetReady { }
         Mock Test-WingetPackageInstalled { $true }
         Mock Invoke-WingetPackageInstall { throw 'Unexpected installation' }
     }

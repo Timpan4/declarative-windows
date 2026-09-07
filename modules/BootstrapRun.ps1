@@ -30,10 +30,24 @@ function Initialize-State {
     $state = $null
     if (Test-Path $StatePath) {
         try {
-            $state = Get-Content -Path $StatePath -Raw | ConvertFrom-Json
+            $state = Get-Content -LiteralPath $StatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($state -isnot [pscustomobject] -or $state.version -ne '1' -or
+                $state.steps -isnot [pscustomobject]) {
+                throw 'Expected version 1 state with a steps object.'
+            }
+            $state.steps = Convert-StepsToHashtable -Steps $state.steps
+            foreach ($id in $state.steps.Keys) {
+                $step = $state.steps[$id]
+                if ($step -isnot [pscustomobject] -or
+                    $step.status -notin @('pending', 'done', 'failed', 'skipped', 'unverified') -or
+                    $null -eq $step.PSObject.Properties['message'] -or
+                    $null -eq $step.PSObject.Properties['lastRun']) {
+                    throw "Invalid record for step '$id'."
+                }
+            }
         }
         catch {
-            $state = $null
+            throw "Cannot safely resume state at '${StatePath}': $($_.Exception.Message) The original file is preserved. Recover it from a known-good copy before retrying; empty state could repeat completed actions."
         }
     }
 
@@ -60,6 +74,18 @@ function Initialize-State {
     return $state
 }
 
+function Enter-BootstrapStateLock {
+    param([Parameter(Mandatory)][string]$StatePath)
+
+    try {
+        # Keep the handle open for the whole run. The OS releases it after a crash.
+        return [IO.File]::Open("$StatePath.lock", [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    }
+    catch {
+        throw "Cannot own bootstrap state at '${StatePath}'. Another setup run may be active: $($_.Exception.Message)"
+    }
+}
+
 function Save-State {
     param(
         [Parameter(Mandatory)]
@@ -72,7 +98,26 @@ function Save-State {
     if ($DryRun) { return }
 
     $State.lastUpdated = (Get-Date).ToString("o")
-    $State | ConvertTo-Json -Depth 6 | Set-Content -Path $StatePath -Force
+    $destination = [IO.Path]::GetFullPath($StatePath)
+    $temporaryPath = "$destination.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($State | ConvertTo-Json -Depth 6))
+        $stream = [IO.File]::Open($temporaryPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush($true)
+        }
+        finally { $stream.Dispose() }
+        if ([IO.File]::Exists($destination)) {
+            [IO.File]::Replace($temporaryPath, $destination, "$destination.previous")
+        }
+        else {
+            [IO.File]::Move($temporaryPath, $destination)
+        }
+    }
+    finally {
+        if ([IO.File]::Exists($temporaryPath)) { [IO.File]::Delete($temporaryPath) }
+    }
 }
 
 function Set-StepState {

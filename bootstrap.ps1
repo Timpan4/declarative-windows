@@ -56,6 +56,8 @@ $ProgressFile = Join-Path $SetupPath "progress.json"
 $CanonicalRepoPath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "declarative-windows"
 $CanonicalBootstrap = Join-Path $CanonicalRepoPath "bootstrap.ps1"
 $SophiaVersion = '7.3.0'
+# GitHub's release asset digest, verified from releases/tag/7.3.0.
+$SophiaArchiveSha256 = 'd342149e13053ea87c6119706a1f9d7d56d08c6e55ced113b1c32a30e7873bf2'
 $SophiaDir = Join-Path $SetupPath "Sophia-Script-$SophiaVersion"
 $SophiaScript = Join-Path $SophiaDir "Sophia.ps1"
 $SophiaZipName = "Sophia.Script.for.Windows.11.v$SophiaVersion.zip"
@@ -414,6 +416,34 @@ function Test-SophiaFramework {
     return $manifest.ModuleVersion -eq $SophiaVersion
 }
 
+function Assert-SophiaReleaseIntegrity {
+    param([string]$ArchivePath, [string]$FrameworkPath)
+
+    $actualHash = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ($actualHash -ne $SophiaArchiveSha256) { throw 'Sophia archive SHA-256 mismatch. Refusing to execute downloaded code.' }
+    if ($FrameworkPath) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
+        try {
+            $prefix = "Sophia_Script_for_Windows_11_v$SophiaVersion/"
+            foreach ($entry in $archive.Entries) {
+                if (-not $entry.Name -or -not $entry.FullName.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }
+                $relativePath = $entry.FullName.Substring($prefix.Length)
+                $filePath = Join-Path $FrameworkPath $relativePath
+                $stream = $entry.Open()
+                $sha256 = [Security.Cryptography.SHA256]::Create()
+                try { $expected = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') }
+                finally { $sha256.Dispose(); $stream.Dispose() }
+                if ((Get-FileHash -LiteralPath $filePath -Algorithm SHA256 -ErrorAction Stop).Hash -ne $expected) {
+                    throw "Sophia release file differs from the verified archive: $relativePath. Move the cached framework aside before retrying."
+                }
+            }
+        }
+        finally { $archive.Dispose() }
+    }
+    Write-Log "Verified Sophia $SophiaVersion artifact SHA256 $actualHash" -Level INFO
+}
+
 function Get-SophiaScript {
     $stagingPath = $null
     try {
@@ -421,6 +451,7 @@ function Get-SophiaScript {
             if (-not (Test-SophiaFramework -Path $SophiaDir)) {
                 throw "Existing Sophia directory is incomplete or has the wrong version: $SophiaDir. Move it aside before retrying."
             }
+            Assert-SophiaReleaseIntegrity -ArchivePath (Join-Path $SophiaDir '.release.zip') -FrameworkPath $SophiaDir
             Write-Log "Sophia Script already extracted at $SophiaDir" -Level INFO
             return $SophiaScript
         }
@@ -431,12 +462,14 @@ function Get-SophiaScript {
         $zipPath = Join-Path $stagingPath $SophiaZipName
         Write-Log "Downloading Sophia Script v$SophiaVersion..." -Level INFO
         Invoke-WebRequest -Uri $SophiaDownloadUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        Assert-SophiaReleaseIntegrity -ArchivePath $zipPath
         Expand-Archive -LiteralPath $zipPath -DestinationPath $stagingPath -ErrorAction Stop
 
         $extractedDir = Join-Path $stagingPath "Sophia_Script_for_Windows_11_v$SophiaVersion"
         if (-not (Test-SophiaFramework -Path $extractedDir)) {
             throw 'The pinned Sophia release is missing required framework files or has the wrong version.'
         }
+        Move-Item -LiteralPath $zipPath -Destination (Join-Path $extractedDir '.release.zip') -ErrorAction Stop
         # Publish only the validated release, without searching or removing neighboring setup files.
         Move-Item -LiteralPath $extractedDir -Destination $SophiaDir -ErrorAction Stop
         Write-Log "Sophia Script extracted to $SophiaDir" -Level SUCCESS
@@ -1253,6 +1286,7 @@ function Ensure-CanonicalRepo {
         return $false
     }
 
+    Update-SetupToolPath
     $gitCommand = Get-Command git -ErrorAction SilentlyContinue
     if (-not $gitCommand) {
         Write-Log "Git is not available yet; skipping canonical repo clone" -Level WARNING
@@ -1341,6 +1375,16 @@ foreach ($moduleName in @("BootstrapRun.ps1", "BackupManifest.ps1", "WinGetInsta
     $modulePath = Join-Path $ModuleRoot $moduleName
     if (Test-Path $modulePath) {
         . $modulePath
+    }
+}
+
+$stateLock = $null
+if (-not $DryRun -and (Test-Path -LiteralPath $SetupPath -PathType Container)) {
+    try { $stateLock = Enter-BootstrapStateLock -StatePath $StateFile }
+    catch {
+        # A competing run must not overwrite the owner's logs, state or reports.
+        Write-Error $_.Exception.Message
+        exit 1
     }
 }
 
@@ -1714,6 +1758,9 @@ catch {
     Write-Log "Stack Trace: $($_.ScriptStackTrace)" -Level ERROR
     $null = Complete-BootstrapRun -DesktopPath ([Environment]::GetFolderPath("Desktop")) -FailureMessage $_.Exception.Message
     exit 1
+}
+finally {
+    if ($stateLock) { $stateLock.Dispose() }
 }
 
 exit $runResult.ExitCode

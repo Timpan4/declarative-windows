@@ -2,7 +2,7 @@ Describe 'isolated Sophia release extraction' {
     BeforeAll {
         $bootstrap = Join-Path (Split-Path $PSScriptRoot -Parent) 'bootstrap.ps1'
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($bootstrap, [ref]$null, [ref]$null)
-        foreach ($name in @('Test-SophiaFramework', 'Get-SophiaScript')) {
+        foreach ($name in @('Test-SophiaFramework', 'Assert-SophiaReleaseIntegrity', 'Get-SophiaScript')) {
             $definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
             . ([scriptblock]::Create($definition.Extent.Text))
         }
@@ -30,8 +30,11 @@ Describe 'isolated Sophia release extraction' {
         $stale = Join-Path $SetupPath 'unrelated\Sophia.ps1'
         New-Item -ItemType Directory -Path (Split-Path $stale -Parent) -Force | Out-Null
         Set-Content -LiteralPath $stale -Value 'unrelated script'
+        $fixtureZip = "$release.zip"
+        Compress-Archive -LiteralPath $releaseRoot -DestinationPath $fixtureZip
+        $SophiaArchiveSha256 = (Get-FileHash -LiteralPath $fixtureZip).Hash
         Mock Invoke-WebRequest {
-            Compress-Archive -LiteralPath $releaseRoot -DestinationPath $OutFile
+            Copy-Item -LiteralPath $fixtureZip -Destination $OutFile
         }
     }
 
@@ -44,6 +47,8 @@ Describe 'isolated Sophia release extraction' {
 
     It 'rejects an incomplete archive without publishing it' {
         Remove-Item -LiteralPath (Join-Path $releaseRoot 'Module\Binaries\LGPO.exe')
+        Compress-Archive -LiteralPath $releaseRoot -DestinationPath $fixtureZip -Force
+        $SophiaArchiveSha256 = (Get-FileHash -LiteralPath $fixtureZip).Hash
         Get-SophiaScript | Should -BeNullOrEmpty
         Test-Path -LiteralPath $SophiaDir | Should -BeFalse
         Get-Content -LiteralPath $stale | Should -Be 'unrelated script'
@@ -55,6 +60,22 @@ Describe 'isolated Sophia release extraction' {
         Test-Path -LiteralPath $SophiaDir | Should -BeFalse
         @(Get-ChildItem -LiteralPath $SetupPath -Filter '.sophia-*').Count | Should -Be 0
         Get-Content -LiteralPath $stale | Should -Be 'unrelated script'
+    }
+
+    It 'rejects mismatched or incomplete downloads before extraction' {
+        Mock Invoke-WebRequest { Set-Content -LiteralPath $OutFile -Value 'partial download' }
+        Mock Expand-Archive { throw 'Must not extract an unverified archive' }
+        Get-SophiaScript | Should -BeNullOrEmpty
+        Should -Invoke Expand-Archive -Times 0 -Exactly
+        Test-Path -LiteralPath $SophiaDir | Should -BeFalse
+    }
+
+    It 'checks cached code against the verified archive before reuse' {
+        Get-SophiaScript | Should -Be $SophiaScript
+        Get-SophiaScript | Should -Be $SophiaScript
+        Set-Content -LiteralPath $SophiaScript -Value 'modified code'
+        Get-SophiaScript | Should -BeNullOrEmpty
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly
     }
 
     It 'preserves an incomplete existing directory and reports a retryable failure' {

@@ -1,4 +1,4 @@
-function Get-WingetPackageIdsFromJson {
+function Get-WingetPackagesFromJson {
     param([string]$Path)
 
     try {
@@ -14,7 +14,12 @@ function Get-WingetPackageIdsFromJson {
         throw "Invalid WinGet manifest '${Path}': expected an object with a Sources array."
     }
 
-    $packageIds = @()
+    foreach ($property in $data.PSObject.Properties.Name) {
+        if ($property -notin @('$schema', 'CreationDate', 'WinGetVersion', 'Sources')) {
+            throw "Invalid WinGet manifest '${Path}': unsupported manifest field '$property'."
+        }
+    }
+    $packages = @()
 
     for ($sourceIndex = 0; $sourceIndex -lt $data.Sources.Count; $sourceIndex++) {
         $source = $data.Sources[$sourceIndex]
@@ -23,28 +28,141 @@ function Get-WingetPackageIdsFromJson {
             throw "Invalid WinGet manifest '${Path}': Sources[$sourceIndex] must contain a Packages array."
         }
 
+        foreach ($property in $source.PSObject.Properties.Name) {
+            if ($property -notin @('Packages', 'SourceDetails')) {
+                throw "Invalid WinGet manifest '${Path}': unsupported source field '$property'."
+            }
+        }
+        $sourceName = ''
+        if ($null -ne $source.PSObject.Properties['SourceDetails']) {
+            if ($source.SourceDetails -isnot [pscustomobject] -or
+                $source.SourceDetails.Name -isnot [string] -or [string]::IsNullOrWhiteSpace($source.SourceDetails.Name)) {
+                throw "Invalid WinGet manifest '${Path}': SourceDetails requires a non-empty Name."
+            }
+            foreach ($property in $source.SourceDetails.PSObject.Properties) {
+                if ($property.Name -notin @('Name', 'Identifier', 'Argument', 'Type') -or
+                    $property.Value -isnot [string] -or [string]::IsNullOrWhiteSpace($property.Value)) {
+                    throw "Invalid WinGet manifest '${Path}': unsupported or invalid SourceDetails field '$($property.Name)'."
+                }
+            }
+            $sourceName = $source.SourceDetails.Name
+        }
+
         for ($packageIndex = 0; $packageIndex -lt $source.Packages.Count; $packageIndex++) {
             $package = $source.Packages[$packageIndex]
             if ($package -isnot [pscustomobject] -or $null -eq $package.PSObject.Properties['PackageIdentifier'] -or
                 $package.PackageIdentifier -isnot [string] -or [string]::IsNullOrWhiteSpace($package.PackageIdentifier)) {
                 throw "Invalid WinGet manifest '${Path}': Sources[$sourceIndex].Packages[$packageIndex].PackageIdentifier must be a non-empty string."
             }
-            $packageIds += $package.PackageIdentifier
+            foreach ($property in $package.PSObject.Properties.Name) {
+                if ($property -notin @('PackageIdentifier', 'Version')) {
+                    throw "Invalid WinGet manifest '${Path}': unsupported package field '$property'. Supported fields are PackageIdentifier and Version."
+                }
+            }
+            $version = ''
+            if ($null -ne $package.PSObject.Properties['Version']) {
+                if ($package.Version -isnot [string] -or [string]::IsNullOrWhiteSpace($package.Version)) {
+                    throw "Invalid WinGet manifest '${Path}': Version must be a non-empty string."
+                }
+                $version = $package.Version
+            }
+            $packages += [pscustomobject]@{
+                PackageId = $package.PackageIdentifier
+                Source = $sourceName
+                Version = $version
+                SourceDetails = $source.SourceDetails
+            }
         }
     }
 
-    return ,@($packageIds | Sort-Object -Unique)
+    return ,@($packages | Sort-Object PackageId, Source, Version, @{ Expression = { $_.SourceDetails | ConvertTo-Json -Compress } } -Unique)
+}
+
+function Get-WingetPackageIdsFromJson {
+    param([string]$Path)
+    return ,@(Get-WingetPackagesFromJson -Path $Path | ForEach-Object { $_.PackageId } | Sort-Object -Unique)
+}
+
+function Update-SetupToolPath {
+    $paths = @($env:Path -split ';')
+    foreach ($target in @('Machine', 'User')) {
+        $registeredPath = [Environment]::GetEnvironmentVariable('Path', $target)
+        foreach ($entry in ($registeredPath -split ';')) {
+            if ($entry) {
+                $expanded = [Environment]::ExpandEnvironmentVariables($entry)
+                if ($expanded -notin $paths) { $paths += $expanded }
+            }
+        }
+    }
+    $env:Path = $paths -join ';'
+}
+
+function Assert-WingetReady {
+    Update-SetupToolPath
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw 'Prerequisite failure: WinGet is unavailable. Install or register Microsoft App Installer for this user, then rerun setup.'
+    }
+    $null = & winget --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Prerequisite failure: WinGet cannot start, exit code $LASTEXITCODE. Repair or register Microsoft App Installer for this user, then rerun setup."
+    }
+}
+
+function Assert-WingetSources {
+    param([object[]]$Packages)
+
+    $registeredSources = @{}
+    foreach ($package in $Packages) {
+        if (-not $package.Source) { continue }
+        if (-not $registeredSources.ContainsKey($package.Source)) {
+            $output = & winget source export $package.Source 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Prerequisite failure: WinGet source '$($package.Source)' is unavailable." }
+            $registeredSources[$package.Source] = ($output -join "`n") | ConvertFrom-Json -ErrorAction Stop
+        }
+        $registered = $registeredSources[$package.Source]
+        foreach ($property in $package.SourceDetails.PSObject.Properties) {
+            $field = if ($property.Name -eq 'Argument') { 'Arg' } else { $property.Name }
+            if ($registered.$field -cne $property.Value) {
+                throw "Prerequisite failure: registered WinGet source '$($package.Source)' does not match manifest $($property.Name)."
+            }
+        }
+    }
 }
 
 function Test-WingetPackageInstalled {
-    param([string]$PackageId)
+    param([string]$PackageId, [string]$Source = '', [string]$Version = '')
 
-    $result = winget list --id $PackageId --exact 2>&1
+    if ($Version) {
+        # Export supplies installed versions as JSON; list's localized table has no version filter.
+        $inventoryPath = Join-Path $env:TEMP "winget-inventory-$([guid]::NewGuid().ToString('N')).json"
+        try {
+            $arguments = @('export', '--output', $inventoryPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
+            if ($Source) { $arguments += @('--source', $Source) }
+            $null = & winget @arguments 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "WinGet inventory failed with exit code $LASTEXITCODE." }
+            $inventory = Get-Content -LiteralPath $inventoryPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($inventory.Sources -isnot [array]) { throw 'WinGet returned an invalid inventory.' }
+            foreach ($entry in $inventory.Sources) {
+                if ($Source -and $entry.SourceDetails.Name -cne $Source) { continue }
+                foreach ($package in $entry.Packages) {
+                    if ($package.PackageIdentifier -ceq $PackageId -and $package.Version -ceq $Version) { return $true }
+                }
+            }
+            return $false
+        }
+        finally {
+            if (Test-Path -LiteralPath $inventoryPath) { Remove-Item -LiteralPath $inventoryPath -Force }
+        }
+    }
+
+    $arguments = @('list', '--id', $PackageId, '--exact', '--accept-source-agreements', '--disable-interactivity')
+    if ($Source) { $arguments += @('--source', $Source) }
+    $result = & winget @arguments 2>&1
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
 
-    return $result -match [regex]::Escape($PackageId)
+    return @($result -match ("(?:^|\s){0}(?:\s|$)" -f [regex]::Escape($PackageId))).Count -gt 0
 }
 
 function Write-WingetOutput {
@@ -128,6 +246,10 @@ function Invoke-WingetPackageInstall {
         [Parameter(Mandatory)]
         [string]$PackageId,
 
+        [string]$Source = '',
+
+        [string]$Version = '',
+
         [switch]$Unelevated,
 
         [string]$Mode = 'admin',
@@ -136,18 +258,20 @@ function Invoke-WingetPackageInstall {
 
         [int]$PackageTotal = 0,
 
-        [int]$TimeoutSeconds = 14400
+        [int]$TimeoutSeconds = 14400,
+
+        [Threading.CancellationToken]$CancellationToken = [Threading.CancellationToken]::None
     )
+
+    $arguments = @(
+        'install', '--id', $PackageId, '--exact',
+        '--accept-package-agreements', '--accept-source-agreements'
+    )
+    if ($Source) { $arguments += @('--source', $Source) }
+    if ($Version) { $arguments += @('--version', $Version) }
 
     if (-not $Unelevated) {
         $output = New-Object System.Collections.Generic.List[string]
-        $arguments = @(
-            'install',
-            '--id', $PackageId,
-            '--exact',
-            '--accept-package-agreements',
-            '--accept-source-agreements'
-        )
 
         & winget @arguments 2>&1 | ForEach-Object {
             $line = $_.ToString()
@@ -164,11 +288,15 @@ function Invoke-WingetPackageInstall {
     $runnerPath = Join-Path $env:TEMP "winget-install-runner-$(Get-Random).ps1"
     $resultPath = Join-Path $env:TEMP "winget-install-result-$(Get-Random).json"
     $taskName = "WingetInstallUnelevated-$(Get-Random)"
+    $taskRegistered = $false
+    $result = [pscustomobject]@{ ExitCode = 1; Output = @(); RemainingWork = $false }
 
     try {
+        $CancellationToken.ThrowIfCancellationRequested()
         $escapedPackageId = $PackageId.Replace("'", "''")
         $escapedResultPath = $resultPath.Replace("'", "''")
         $escapedProgressFile = $ProgressFile.Replace("'", "''")
+        $serializedArguments = ($arguments | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ', '
         $runnerContent = @"
 `$Host.UI.RawUI.WindowTitle = 'WinGet User-Scope Retry'
 
@@ -196,8 +324,11 @@ Write-Host 'Starting user-scope WinGet retry...' -ForegroundColor Cyan
 Write-Host 'This window will show package installs that cannot run as administrator.' -ForegroundColor Cyan
 
 `$output = New-Object System.Collections.Generic.List[string]
+`$exitCode = 1
+try {
 Update-ProgressFile -Phase 'Retrying user-scope packages' -Status 'Installing package $PackageIndex of $PackageTotal' -CurrentPackage '$escapedPackageId' -PackageIndex $PackageIndex -PackageTotal $PackageTotal
-winget install --id '$escapedPackageId' --exact --accept-package-agreements --accept-source-agreements 2>&1 | ForEach-Object {
+`$arguments = @($serializedArguments)
+& winget @arguments 2>&1 | ForEach-Object {
     `$line = `$_.ToString()
     `$output.Add(`$line)
     Write-Host `$line
@@ -211,78 +342,141 @@ winget install --id '$escapedPackageId' --exact --accept-package-agreements --ac
 }
 
 `$exitCode = `$LASTEXITCODE
+}
+catch { `$output.Add(`$_.Exception.Message) }
 Write-Host "WinGet retry finished with exit code `$exitCode" -ForegroundColor Cyan
-[pscustomobject]@{
+`$json = [pscustomobject]@{
+    Completed = `$true
     ExitCode = `$exitCode
     Output = @(`$output)
-} | ConvertTo-Json -Depth 5 | Set-Content -Path '$escapedResultPath' -Encoding UTF8 -Force
+} | ConvertTo-Json -Depth 5
+`$temporaryResult = '$escapedResultPath.tmp'
+`$bytes = [Text.UTF8Encoding]::new(`$false).GetBytes(`$json)
+`$stream = [IO.File]::Open(`$temporaryResult, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+try {
+    `$stream.Write(`$bytes, 0, `$bytes.Length)
+    `$stream.Flush(`$true)
+}
+finally { `$stream.Dispose() }
+[IO.File]::Move(`$temporaryResult, '$escapedResultPath')
 "@
 
         Set-Content -Path $runnerPath -Value $runnerContent -Encoding UTF8 -Force
 
         $taskUser = if ($env:USERDOMAIN) { "$($env:USERDOMAIN)\$($env:USERNAME)" } else { $env:USERNAME }
         $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`""
-        $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
         $taskPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
 
-        try {
-            $null = Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force -ErrorAction Stop
-        }
-        catch {
-            return [pscustomobject]@{
-                ExitCode = 1
-                Output = @("Failed to create non-admin scheduled task", $_.Exception.Message)
-            }
-        }
+        # On-demand only: a timer trigger can launch the installer a second time.
+        $null = Register-ScheduledTask -TaskName $taskName -Action $taskAction -Principal $taskPrincipal -Force -ErrorAction Stop
+        $taskRegistered = $true
 
-        try {
-            Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
-        }
-        catch {
-            return [pscustomobject]@{
-                ExitCode = 1
-                Output = @("Failed to start non-admin scheduled task", $_.Exception.Message)
-            }
-        }
+        Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 
         $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
         while ((Get-Date) -lt $deadline) {
-            if (Test-Path $resultPath) {
+            $CancellationToken.ThrowIfCancellationRequested()
+            if (Test-Path -LiteralPath $resultPath) {
                 break
             }
-
+            $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+            $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+            # SCHED_S_TASK_HAS_NOT_RUN is 0x41303; a new task can briefly remain Ready.
+            if ($task.State -notin @('Running', 'Queued') -and $info.LastTaskResult -ne 0x41303) {
+                if (Test-Path -LiteralPath $resultPath) { break }
+                throw "Non-admin scheduled task ended without a complete result, task exit code $($info.LastTaskResult)."
+            }
             Start-Sleep -Seconds 2
         }
 
-        if (-not (Test-Path $resultPath)) {
-            return [pscustomobject]@{
-                ExitCode = 1
-                Output = @("Timed out waiting for non-admin WinGet install to finish")
-            }
+        if (-not (Test-Path -LiteralPath $resultPath)) {
+            throw 'Timed out waiting for non-admin WinGet install to finish'
         }
 
-        $result = Get-Content -Path $resultPath -Raw | ConvertFrom-Json
-        $output = @()
-        if ($null -ne $result.Output) {
-            $output = @($result.Output)
+        $published = Get-Content -LiteralPath $resultPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($published -isnot [pscustomobject] -or $published.Completed -isnot [bool] -or -not $published.Completed -or
+            ($published.ExitCode -isnot [int] -and $published.ExitCode -isnot [long]) -or
+            $published.ExitCode -lt [int]::MinValue -or $published.ExitCode -gt [int]::MaxValue -or $published.Output -isnot [array] -or
+            @($published.Output | Where-Object { $_ -isnot [string] }).Count) {
+            throw 'Malformed or incomplete non-admin WinGet result.'
         }
-
-        return [pscustomobject]@{
-            ExitCode = [int]$result.ExitCode
-            Output = $output
-        }
+        $result.ExitCode = $published.ExitCode
+        $result.Output = @($published.Output)
+    }
+    catch {
+        $result.Output = @("Non-admin scheduled task failed: $($_.Exception.Message)")
     }
     finally {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-
-        if (Test-Path $runnerPath) {
-            Remove-Item -Path $runnerPath -Force -ErrorAction SilentlyContinue
+        $settled = -not $taskRegistered
+        if ($taskRegistered) {
+            try {
+                $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                if ($task.State -in @('Running', 'Queued')) {
+                    Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                }
+                $settled = $task.State -in @('Ready', 'Disabled')
+                if ($settled) {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
+                }
+            }
+            catch { $result.Output += "Scheduled task cleanup failed: $($_.Exception.Message)" }
         }
-
-        if (Test-Path $resultPath) {
-            Remove-Item -Path $resultPath -Force -ErrorAction SilentlyContinue
+        if ($settled) {
+            foreach ($path in @($runnerPath, $resultPath, "$resultPath.tmp")) {
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+            }
+        }
+        else {
+            $result.ExitCode = 1
+            $result.RemainingWork = $true
+            $result.Output += "Remaining work: scheduled task '$taskName' could not be confirmed stopped. Retained runner '$runnerPath' and result '$resultPath'; settle this task before retrying."
         }
     }
+    return $result
+}
+
+function Get-WingetFailureReason {
+    param([object]$Result)
+
+    $outputText = $Result.Output -join "`n"
+    $code = '0x{0:X8}' -f ($Result.ExitCode -band 0xFFFFFFFFL)
+    # Summaries use known diagnostic categories, never arbitrary installer output or URLs.
+    $cause = if ($Result.RemainingWork) {
+        'Installer task still active or unknown; settle the retained task listed in install.log before retrying'
+    }
+    elseif ($code -eq '0x8A150011' -or $outputText -match 'installer hash does not match|hash mismatch') {
+        'Integrity failure: installer hash mismatch'
+    }
+    elseif ($outputText -match 'Failed to (open|update) (the )?(package )?source|source.*unavailable|dependency.*failed|dependencies.*failed|App Installer.*(unavailable|not registered)') {
+        'Prerequisite failure: package source, dependency or App Installer unavailable'
+    }
+    elseif ($outputText -match 'Timed out|cancelled|scheduled task|remaining work') {
+        'Installer task failure: retry did not finish cleanly'
+    }
+    else { 'Installer failure' }
+    return "$cause; WinGet exit code $($Result.ExitCode) ($code). See install.log for native output."
+}
+
+function Set-WingetPackageOutcome {
+    param([string]$StepId, [object]$Package, [string]$Status, [object]$ExitCode = $null, [string]$Reason = '')
+
+    if (-not $SetupState -or $DryRun) { return }
+    $step = $SetupState.steps[$StepId]
+    $outcomes = @($step.packages | Where-Object {
+        $_ -and ($_.PackageId -cne $Package.PackageId -or $_.Source -cne $Package.Source -or $_.Version -cne $Package.Version)
+    })
+    $outcomes += [pscustomobject]@{
+        PackageId = $Package.PackageId
+        Source = $Package.Source
+        Version = $Package.Version
+        Status = $Status
+        ExitCode = $ExitCode
+        Reason = $Reason
+        CheckedAt = (Get-Date).ToString('o')
+    }
+    $step | Add-Member -MemberType NoteProperty -Name packages -Value $outcomes -Force
+    Save-State -State $SetupState -StatePath $StateFile
 }
 
 function Invoke-WingetManifestInstall {
@@ -316,39 +510,45 @@ function Invoke-WingetManifestInstall {
     try {
         Write-Log "Found $ManifestLabel at $ManifestPath" -Level INFO
 
-        $packageIds = Get-WingetPackageIdsFromJson -Path $ManifestPath
-        if (-not $packageIds -or $packageIds.Count -eq 0) {
+        $packages = Get-WingetPackagesFromJson -Path $ManifestPath
+        if (-not $packages -or $packages.Count -eq 0) {
             Write-Log "$ManifestLabel contains no packages to install" -Level WARNING
             Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message "No packages found in $ManifestLabel"
             Set-StepState -StepId $StepId -Status "done" -Message "No packages found"
             return $true
         }
 
+        Assert-WingetReady
+        Assert-WingetSources -Packages $packages
+        Set-StepState -StepId $StepId -Status 'pending' -Message 'Checking package inventory'
         $appsHash = (Get-FileHash -Path $ManifestPath -Algorithm SHA256).Hash
         $markerHash = $null
         if (Test-Path $MarkerPath) {
             $markerHash = (Get-Content -Path $MarkerPath -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
         }
 
-        $missingPackages = New-Object System.Collections.Generic.List[string]
+        $missingPackages = New-Object System.Collections.Generic.List[object]
         $installedCount = 0
-        $totalPackages = $packageIds.Count
+        $totalPackages = $packages.Count
 
         Update-SetupProgress -Phase 'Scanning packages' -Status ("Checking package 1 of {0}" -f $totalPackages) -CurrentPackage '' -PackageIndex 0 -PackageTotal $totalPackages -Mode 'admin'
 
         for ($index = 0; $index -lt $totalPackages; $index++) {
-            $packageId = $packageIds[$index]
+            $package = $packages[$index]
+            $packageId = $package.PackageId
+            $packageArguments = @{ PackageId = $packageId; Source = $package.Source; Version = $package.Version }
             $currentNumber = $index + 1
 
             Update-SetupProgress -Phase 'Scanning packages' -Status ("Checking package {0} of {1}" -f $currentNumber, $totalPackages) -CurrentPackage $packageId -PackageIndex $currentNumber -PackageTotal $totalPackages -Mode 'admin'
             Write-Log "[$currentNumber/$totalPackages] Checking package: $packageId" -Level INFO
 
-            if (Test-WingetPackageInstalled -PackageId $packageId) {
+            if (Test-WingetPackageInstalled @packageArguments) {
                 $installedCount++
+                Set-WingetPackageOutcome -StepId $StepId -Package $package -Status verified
                 Write-Log "[$currentNumber/$totalPackages] Already installed: $packageId" -Level INFO
             }
             else {
-                $missingPackages.Add($packageId)
+                $missingPackages.Add($package)
                 Write-Log "[$currentNumber/$totalPackages] Missing: $packageId" -Level INFO
             }
         }
@@ -377,7 +577,12 @@ function Invoke-WingetManifestInstall {
         $failedPackages = [System.Collections.Generic.List[string]]::new()
         $packageNumber = 0
 
-        foreach ($packageId in @($missingPackages)) {
+        foreach ($package in $missingPackages) {
+            $packageId = $package.PackageId
+            $packageArguments = @{ PackageId = $packageId; Source = $package.Source; Version = $package.Version }
+            $packageLabel = $packageId
+            if ($package.Source) { $packageLabel += " [source: $($package.Source)]" }
+            if ($package.Version) { $packageLabel += " [version: $($package.Version)]" }
             $packageNumber++
             $installed = $false
             $verified = $false
@@ -386,10 +591,11 @@ function Invoke-WingetManifestInstall {
             Write-Log ("Installing [{0}/{1}]: {2} (admin)" -f $packageNumber, $missingPackages.Count, $packageId) -Level INFO
             Update-SetupProgress -Phase 'Installing packages' -Status ("Installing package {0} of {1}" -f $packageNumber, $missingPackages.Count) -CurrentPackage $packageId -PackageIndex $packageNumber -PackageTotal $missingPackages.Count -Mode 'admin'
 
-            $installResult = Invoke-WingetPackageInstall -PackageId $packageId -Mode 'admin' -PackageIndex $packageNumber -PackageTotal $missingPackages.Count
+            $installResult = Invoke-WingetPackageInstall @packageArguments -Mode 'admin' -PackageIndex $packageNumber -PackageTotal $missingPackages.Count
             Write-WingetOutput -Output $installResult.Output -Prefix "WinGet:"
+            $finalResult = $installResult
 
-            if (Test-WingetPackageInstalled -PackageId $packageId) {
+            if (Test-WingetPackageInstalled @packageArguments) {
                 $installed = $true
                 $verified = $true
             }
@@ -398,10 +604,11 @@ function Invoke-WingetManifestInstall {
                 Write-Log "A second PowerShell window may appear for user-scope installers. Leave it open until it finishes." -Level INFO
                 Update-SetupProgress -Phase 'Retrying user-scope packages' -Status ("Retrying package {0} of {1}" -f $packageNumber, $missingPackages.Count) -CurrentPackage $packageId -PackageIndex $packageNumber -PackageTotal $missingPackages.Count -Mode 'user'
 
-                $retryResult = Invoke-WingetPackageInstall -PackageId $packageId -Unelevated -Mode 'user' -PackageIndex $packageNumber -PackageTotal $missingPackages.Count
+                $retryResult = Invoke-WingetPackageInstall @packageArguments -Unelevated -Mode 'user' -PackageIndex $packageNumber -PackageTotal $missingPackages.Count
                 Write-WingetOutput -Output $retryResult.Output -Prefix "WinGet (user):"
+                $finalResult = $retryResult
 
-                if (Test-WingetPackageInstalled -PackageId $packageId) {
+                if (-not $retryResult.RemainingWork -and (Test-WingetPackageInstalled @packageArguments)) {
                     $installed = $true
                     $verified = $true
                 }
@@ -423,26 +630,28 @@ function Invoke-WingetManifestInstall {
 
             if ($verified) {
                 $installedPackages.Add($packageId)
+                Set-WingetPackageOutcome -StepId $StepId -Package $package -Status verified -ExitCode $finalResult.ExitCode
                 Write-Log "Successfully installed and verified $packageId" -Level SUCCESS
                 continue
             }
 
             if ($unverified) {
                 $unverifiedPackages.Add($packageId)
-                Add-FailedItem -Category "$SummaryStep Verification" -Item $packageId -Reason "WinGet reported success but winget list did not verify the package" -Status WARN
+                $reason = 'Verification uncertain: WinGet returned exit code 0, but inventory did not verify the requested package. Setup will check again on the next run.'
+                Set-WingetPackageOutcome -StepId $StepId -Package $package -Status unverified -ExitCode $finalResult.ExitCode -Reason $reason
+                Add-FailedItem -Category "$SummaryStep Verification" -Item $packageLabel -Reason $reason -Status WARN
                 Write-Log "WARNING: $packageId install reported success, but winget list did not verify it" -Level WARNING
                 continue
             }
 
             if (-not $installed) {
                 $failedPackages.Add($packageId)
+                $reason = Get-WingetFailureReason -Result $finalResult
+                Set-WingetPackageOutcome -StepId $StepId -Package $package -Status failed -ExitCode $finalResult.ExitCode -Reason $reason
+                Add-FailedItem -Category $SummaryStep -Item $packageLabel -Reason $reason
                 Write-Log "WARNING: $packageId failed to install" -Level WARNING
+                if ($finalResult.RemainingWork) { throw $reason }
             }
-        }
-
-        foreach ($packageId in $failedPackages) {
-            Add-FailedItem -Category $SummaryStep -Item $packageId -Reason "Not installed after per-package install from $ManifestLabel"
-            Write-Log "WARNING: $packageId still not installed after WinGet install from $ManifestLabel" -Level WARNING
         }
 
         $failCount = @($failedPackages).Count
@@ -451,13 +660,13 @@ function Invoke-WingetManifestInstall {
         if ($failCount -eq 0) {
             Update-SetupProgress -Phase 'Installing packages' -Status 'Completed' -CurrentPackage '' -PackageIndex $missingPackages.Count -PackageTotal $missingPackages.Count -Mode 'admin'
             Write-Log "WinGet install from $ManifestLabel completed successfully" -Level SUCCESS
-            Set-Content -Path $MarkerPath -Value $appsHash -Force
 
             if ($unverifiedCount -gt 0) {
                 Add-SummaryItem -Step $SummaryStep -Status "WARN" -Message "Installed $($installedPackages.Count) package(s); $unverifiedCount verification warning(s)"
                 Set-StepState -StepId $StepId -Status "unverified" -Message "Installed with $unverifiedCount verification warning(s)"
             }
             else {
+                Set-Content -Path $MarkerPath -Value $appsHash -Force
                 Add-SummaryItem -Step $SummaryStep -Status "OK" -Message "Installed $($installedPackages.Count) package(s)"
                 Set-StepState -StepId $StepId -Status "done" -Message "Installed $($installedPackages.Count) package(s)"
             }

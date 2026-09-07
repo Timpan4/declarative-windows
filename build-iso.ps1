@@ -19,6 +19,9 @@
 .PARAMETER KeepTemp
     If specified, keeps the temporary working directory for debugging.
 
+.PARAMETER OscdimgSha256
+    Expected SHA-256 of the optional oscdimg download, obtained from a trusted source independently of the download.
+
 .EXAMPLE
     .\build-iso.ps1 -SourceISO "Win11_English_x64.iso" -OutputISO "Win11_Custom.iso"
 
@@ -47,6 +50,10 @@ param(
 
     [Parameter(Mandatory = $false)]
     [string]$OscdimgDownloadUrl,
+
+    [Parameter(Mandatory = $false)]
+    [ValidatePattern('^[a-fA-F0-9]{64}$')]
+    [string]$OscdimgSha256,
 
     [Parameter(Mandatory = $false)]
     [switch]$KeepTemp
@@ -111,7 +118,7 @@ if (Test-Path $StagedSetupPayloadModule) {
 
 # Function to find oscdimg.exe from Windows ADK
 function Find-OscdImg {
-    param([string]$DownloadUrl)
+    param([string]$DownloadUrl, [string]$ExpectedHash)
 
     Write-Step "Locating oscdimg.exe from Windows ADK"
 
@@ -143,9 +150,12 @@ function Find-OscdImg {
     }
 
     if ($DownloadUrl) {
+        if ($ExpectedHash -notmatch '^[a-fA-F0-9]{64}$') {
+            throw 'An oscdimg download requires -OscdimgSha256 from a trusted, independent source.'
+        }
         Write-Step "Downloading oscdimg.exe"
 
-        $cacheDir = Join-Path $env:TEMP "declarative-windows-tools"
+        $cacheDir = Join-Path $TempDir 'tools'
         if (-not (Test-Path $cacheDir)) {
             New-Item -Path $cacheDir -ItemType Directory -Force | Out-Null
         }
@@ -155,18 +165,24 @@ function Find-OscdImg {
 
         if ($extension -eq ".zip") {
             $downloadPath = Join-Path $cacheDir "oscdimg.zip"
-            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath -ErrorAction Stop
+            $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256 -ErrorAction Stop).Hash
+            if ($actualHash -ne $ExpectedHash) { throw 'oscdimg download SHA-256 mismatch.' }
+            Write-Info "Verified oscdimg archive SHA256 $actualHash"
             Expand-Archive -Path $downloadPath -DestinationPath $cacheDir -Force
 
-            $oscdimgFile = Get-ChildItem -Path $cacheDir -Filter "oscdimg.exe" -Recurse | Select-Object -First 1
-            if ($oscdimgFile) {
-                Write-Success "Downloaded oscdimg.exe to: $($oscdimgFile.FullName)"
-                return $oscdimgFile.FullName
+            $oscdimgFiles = @(Get-ChildItem -Path $cacheDir -Filter "oscdimg.exe" -Recurse -File)
+            if ($oscdimgFiles.Count -eq 1) {
+                Write-Success "Downloaded oscdimg.exe to: $($oscdimgFiles[0].FullName)"
+                return $oscdimgFiles[0].FullName
             }
         }
         else {
             $downloadPath = Join-Path $cacheDir "oscdimg.exe"
-            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $downloadPath -ErrorAction Stop
+            $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256 -ErrorAction Stop).Hash
+            if ($actualHash -ne $ExpectedHash) { throw 'oscdimg download SHA-256 mismatch.' }
+            Write-Info "Verified oscdimg executable SHA256 $actualHash"
             if (Test-Path $downloadPath) {
                 Write-Success "Downloaded oscdimg.exe to: $downloadPath"
                 return $downloadPath
@@ -225,7 +241,7 @@ try {
     Write-Success "autounattend.xml validation passed"
 
     # Find oscdimg.exe
-    $oscdimgPath = Find-OscdImg -DownloadUrl $OscdimgDownloadUrl
+    $oscdimgPath = Find-OscdImg -DownloadUrl $OscdimgDownloadUrl -ExpectedHash $OscdimgSha256
 
     # Mount source ISO
     Write-Step "Mounting source ISO"
