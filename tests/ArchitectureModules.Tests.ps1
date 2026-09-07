@@ -25,7 +25,7 @@ Describe "architecture module checks" {
         $bootstrap | Should -Match "WinGetInstall\.ps1"
         $modules.WinGetInstall | Should -Match "function Invoke-WingetManifestInstall"
         $modules.WinGetInstall | Should -Match "Invoke-WingetPackageInstall"
-        $modules.WinGetInstall | Should -Match "WinGet reported success but winget list did not verify the package"
+        $modules.WinGetInstall | Should -Match "Verification uncertain: WinGet returned exit code 0"
         $modules.WinGetInstall | Should -Match "Retrying user-scope packages"
     }
 
