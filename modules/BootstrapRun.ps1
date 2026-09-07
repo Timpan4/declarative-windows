@@ -1,9 +1,19 @@
-function Convert-StepsToHashtable {
+﻿function Convert-StepsToHashtable {
     param([object]$Steps)
 
     $stepsTable = [ordered]@{}
-    if ($Steps) {
+    if ($Steps -is [System.Collections.IDictionary]) {
+        foreach ($key in $Steps.Keys) {
+            $stepsTable[$key] = $Steps[$key]
+        }
+    }
+    elseif ($Steps) {
         foreach ($property in $Steps.PSObject.Properties) {
+            # Old state files contain dictionary metadata alongside real records.
+            if ($property.Name -in @('Count', 'Keys', 'Values', 'IsReadOnly', 'IsFixedSize', 'IsSynchronized', 'SyncRoot') -and
+                -not $property.Value.status) {
+                continue
+            }
             $stepsTable[$property.Name] = $property.Value
         }
     }
