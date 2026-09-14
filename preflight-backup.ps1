@@ -162,6 +162,7 @@ function Get-BackupRules {
             id = "known-$((Normalize-RuleId -Value $entry.name))"
             source = $folderPath
             kind = "knownFolder"
+            application = $entry.application
             label = $entry.name
             required = [bool]$entry.required
             tags = @($entry.tags | Where-Object { $null -ne $_ })
@@ -180,6 +181,7 @@ function Get-BackupRules {
             id = "extra-$((Normalize-RuleId -Value $label))"
             source = $expandedPath
             kind = "extraPath"
+            application = $entry.application
             label = $label
             required = [bool]$entry.required
             tags = @($entry.tags | Where-Object { $null -ne $_ })
@@ -411,6 +413,7 @@ foreach ($rule in $rules) {
         source = $rule.source
         restorePath = $rule.restorePath
         kind = $rule.kind
+        application = $rule.application
         tags = $rule.tags
         backupPath = Get-RelativePath -Path $ruleDestination -BasePath $sessionRoot
         success = $copyResult.Success

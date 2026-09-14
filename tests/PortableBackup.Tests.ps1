@@ -82,7 +82,10 @@ Describe "portable backup paths" {
         Move-Item -LiteralPath $session -Destination $movedSession
         Remove-Item -LiteralPath (Join-Path $source 'example.txt')
 
-        & (Join-Path $fixtureRepo 'restore-backup.ps1') -ManifestPath (Join-Path $movedSession 'backup-manifest.json')
+        $manifest.machine.userProfile = $TestDrive
+        $manifest | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $movedSession 'backup-manifest.json')
+        Mock Read-Host { 'YES' }
+        & (Join-Path $fixtureRepo 'restore-backup.ps1') -ManifestPath (Join-Path $movedSession 'backup-manifest.json') -DestinationProfileRoot $TestDrive -UseBackupSettings
         Get-Content -LiteralPath (Join-Path $restoredContent 'example.txt') -Raw | Should -Be "portable content`r`n"
         Get-Content -LiteralPath (Join-Path $restoredRepo 'apps.json') -Raw | Should -Be "{`"packages`":[]}`r`n"
     }

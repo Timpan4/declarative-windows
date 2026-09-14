@@ -6,7 +6,7 @@ Describe "backup and restore static checks" {
         $backupManifestModulePath = Resolve-Path (Join-Path $PSScriptRoot "..\modules\BackupManifest.ps1")
 
         $backupScriptContent = Get-Content $backupScriptPath -Raw
-        $restoreScriptContent = Get-Content $restoreScriptPath -Raw
+        $restoreScriptContent = (Get-Content $restoreScriptPath -Raw) + (Get-Content (Join-Path $PSScriptRoot "..\modules\RestorePlan.ps1") -Raw)
         $backupConfigContent = Get-Content $backupConfigPath -Raw
         $backupManifestModuleContent = Get-Content $backupManifestModulePath -Raw
         $restoreAndModuleContent = $restoreScriptContent + "`n" + $backupManifestModuleContent
@@ -58,7 +58,7 @@ Describe "backup and restore static checks" {
         $restoreScriptContent | Should -Match 'repoFileSource = Resolve-BackupSourcePath'
         $restoreScriptContent | Should -Match 'sourcePath = Resolve-BackupSourcePath'
         $restoreAndModuleContent | Should -Match 'IsPathRooted'
-        $restoreScriptContent | Should -Match 'Resolve-RestoreTargetPath -Path \$rule\.restorePath -ProfileRoot \$DestinationProfileRoot -OriginalOsDrive \$originalOsDrive -RestoreTargetMap \$restoreTargetMap'
+        $restoreScriptContent | Should -Match 'Resolve-RestoreTargetPath -Path \$rule\.restorePath -ProfileRoot \$profile -OriginalOsDrive \$originalOsDrive -RestoreTargetMap \$restoreTargetMap'
     }
 
     It "shares backup manifest implementation through a module" {
