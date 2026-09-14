@@ -34,7 +34,6 @@ Describe "backup and restore static checks" {
     It "supports restore manifest autodetection" {
         $restoreAndModuleContent | Should -Match "Find-BackupManifest"
         $restoreAndModuleContent | Should -Match "declarative-windows-backup"
-        $restoreAndModuleContent | Should -Match 'Sort-Object LastWriteTimeUtc -Descending'
     }
 
     It "remaps backup paths when drive letter differs from manifest" {

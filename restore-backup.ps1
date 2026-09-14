@@ -20,8 +20,8 @@ if ($WorkingDirectory) { Set-Location -LiteralPath $WorkingDirectory -ErrorActio
 . (Join-Path $PSScriptRoot 'modules\BackupManifest.ps1')
 . (Join-Path $PSScriptRoot 'modules\RestorePlan.ps1')
 
-if (-not $ManifestPath) { $ManifestPath = Find-BackupManifest }
-if (-not $ManifestPath) { throw 'Backup manifest not found automatically. Pass -ManifestPath explicitly.' }
+$ManifestPath = Find-BackupManifest -Path $ManifestPath
+if (-not $ManifestPath) { throw 'No backup selected. Pass -ManifestPath with an explicit manifest file from the candidates or another backup location.' }
 $plan = New-RestorePlan -ManifestPath $ManifestPath -DestinationProfileRoot $DestinationProfileRoot -Mode $Mode -IncludeTags $IncludeTags -RestoreApp $RestoreApp -UseBackupSettings:$UseBackupSettings
 Write-Host "Backup: $($plan.manifestPath)"
 Write-Host "Destination profile: $($plan.profileRoot)"
