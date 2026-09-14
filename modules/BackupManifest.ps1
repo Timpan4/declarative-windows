@@ -1,19 +1,113 @@
-function Find-BackupManifest {
-    $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object {
-        $_.Root -ne "$($env:SystemDrive)\"
+function Get-BackupCandidate {
+    param([Parameter(Mandatory)][string]$ManifestPath)
+
+    $candidate = [pscustomobject]@{
+        ManifestPath = $ManifestPath
+        Machine = 'Not recorded'
+        Profile = 'Not recorded'
+        CreatedAt = 'Not recorded'
+        CompletedAt = 'Not recorded'
+        Compatibility = 'Unsupported'
+        Completeness = 'Unknown'
+        Verification = 'Content not verified during discovery'
+        Details = ''
+    }
+    try {
+        Assert-NoBackupReparsePoint $ManifestPath
+        $manifest = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        # Identity is reported metadata, not proof of ownership or authenticity.
+        if ($manifest.machine -is [string]) { $candidate.Machine = $manifest.machine }
+        elseif ($manifest.machine.computerName -is [string]) { $candidate.Machine = $manifest.machine.computerName }
+        if ($manifest.machine.userProfile -is [string]) { $candidate.Profile = $manifest.machine.userProfile }
+        if ($manifest.createdAt -is [string]) { $candidate.CreatedAt = $manifest.createdAt }
+        elseif ($manifest.createdAt -is [datetime]) { $candidate.CreatedAt = $manifest.createdAt.ToString('o') }
+        if ($manifest.completedAt -is [string]) { $candidate.CompletedAt = $manifest.completedAt }
+        elseif ($manifest.completedAt -is [datetime]) { $candidate.CompletedAt = $manifest.completedAt.ToString('o') }
+        Assert-BackupManifest $manifest
+        $candidate.Compatibility = 'Supported'
+    }
+    catch {
+        $candidate.Details = $_.Exception.Message
+        return $candidate
     }
 
-    $candidates = foreach ($drive in $drives) {
-        $root = $drive.Root
-        $container = Join-Path $root "declarative-windows-backup"
-        if (-not (Test-Path $container)) {
-            continue
+    if ($manifest.failures -is [array]) {
+        $candidate.Completeness = if ($manifest.failures.Count) { 'Incomplete' } else { 'Recorded complete' }
+    }
+    if (@($manifest.rules | Where-Object { -not $_.success -and $_.skipped -ne $true }).Count -or
+        ($null -ne $manifest.verification -and $manifest.verification.status -ne 'verified')) {
+        $candidate.Completeness = 'Incomplete'
+    }
+    try {
+        $root = Split-Path -Parent $ManifestPath
+        foreach ($entry in $manifest.repoFiles) {
+            $source = Resolve-BackupSourcePath $entry.backupPath $manifest.backup.backupRoot $root
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing backup file: $source" }
         }
+        foreach ($entry in $manifest.rules) {
+            if (-not $entry.success) { continue }
+            $source = Resolve-BackupSourcePath $entry.backupPath $manifest.backup.backupRoot $root
+            if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Missing backup folder: $source" }
+        }
+        if ($null -ne $manifest.verification) {
+            Assert-BackupHashes -Manifest $manifest -BackupRoot $root -MetadataOnly
+        }
+    }
+    catch {
+        $candidate.Completeness = 'Incomplete'
+        $candidate.Details = $_.Exception.Message
+    }
+    return $candidate
+}
 
-        Get-ChildItem -Path $container -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue
+function Find-BackupManifest {
+    param([string]$Path)
+
+    $searchErrors = @()
+    $explicitFile = $false
+    if ($Path) {
+        $selected = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $roots = @($selected.FullName)
+        $explicitFile = -not $selected.PSIsContainer
+    }
+    else {
+        $roots = @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue -ErrorVariable +searchErrors |
+            Where-Object { $_.Root -ne "$($env:SystemDrive)\" } |
+            ForEach-Object { Join-Path $_.Root 'declarative-windows-backup' })
     }
 
-    return ($candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).FullName
+    $paths = @(foreach ($root in $roots) {
+        if ($explicitFile) { $root; continue }
+        if (Test-Path -LiteralPath $root -ErrorAction SilentlyContinue -ErrorVariable +searchErrors) {
+            Get-ChildItem -LiteralPath $root -Filter 'backup-manifest.json' -Recurse -File -Force -ErrorAction SilentlyContinue -ErrorVariable +searchErrors |
+                ForEach-Object { $_.FullName }
+        }
+    })
+    $candidates = @($paths | Sort-Object -Unique | ForEach-Object { Get-BackupCandidate $_ })
+    if ($candidates.Count) { $candidates | Format-List | Out-Host }
+    else {
+        $searched = if ($roots.Count) { $roots -join ', ' } else { 'No non-system filesystem drives available' }
+        Write-Warning "No backup manifests found. Searched: $searched. Pass -ManifestPath with a backup file or folder."
+    }
+    if ($explicitFile) {
+        if ($candidates[0].Compatibility -ne 'Supported') {
+            throw "Selected backup is unsupported: $Path. $($candidates[0].Details) No other backup was selected."
+        }
+        # An explicit file retains legacy and partial-restore support. Restore planning
+        # still validates the selected content before any writes.
+        return $candidates[0].ManifestPath
+    }
+    if ($searchErrors.Count) {
+        Write-Warning "Backup discovery could not inspect every search location: $($searchErrors -join '; '). Pass -ManifestPath with an explicit manifest file."
+        return $null
+    }
+    if ($candidates.Count -eq 1 -and $candidates[0].Compatibility -eq 'Supported' -and $candidates[0].Completeness -eq 'Recorded complete') {
+        return $candidates[0].ManifestPath
+    }
+    if ($candidates.Count) {
+        Write-Warning 'Backup selection requires an explicit manifest file. Automatic selection requires exactly one candidate that is supported and recorded complete. Pass -ManifestPath with the chosen file.'
+    }
+    return $null
 }
 
 function Get-BackupManifestRoot {
@@ -312,8 +406,9 @@ function Get-VerifiedBackupFile {
 }
 
 function Assert-BackupHashes {
-    param([object]$Manifest, [string]$BackupRoot)
+    param([object]$Manifest, [string]$BackupRoot, [switch]$MetadataOnly)
     if ($null -eq $Manifest.verification) {
+        if ($MetadataOnly) { return }
         # Older manifests recorded only repository-file hashes, without source comparison.
         foreach ($entry in $Manifest.repoFiles) {
             if ($null -ne $entry.sha256) {
@@ -335,7 +430,8 @@ function Assert-BackupHashes {
         if ($entry.sha256 -isnot [string] -or $entry.sha256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'verification.files.sha256 must contain a SHA256 digest.' }
         $path = Resolve-ContainedBackupPath $entry.path $BackupRoot
         if ($verifiedPaths.ContainsKey($path)) { throw "Duplicate verified backup path: $path" }
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.sha256) { throw "Backup hash validation failed: $path" }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing recorded backup file: $path" }
+        if (-not $MetadataOnly -and (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.sha256) { throw "Backup hash validation failed: $path" }
         $verifiedPaths[$path] = $true
     }
     # Added files must not silently join a verified restore, including hidden files.

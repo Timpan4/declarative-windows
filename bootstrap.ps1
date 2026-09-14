@@ -1224,28 +1224,6 @@ function Invoke-PostInstallTweaks {
     return $allSucceeded
 }
 
-function Find-BackupManifest {
-    $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object {
-        $_.Root -ne "$($env:SystemDrive)\"
-    }
-
-    $matches = foreach ($drive in $drives) {
-        $candidateRoot = Join-Path $drive.Root "declarative-windows-backup"
-        if (-not (Test-Path $candidateRoot)) {
-            continue
-        }
-
-        Get-ChildItem -Path $candidateRoot -Filter "backup-manifest.json" -Recurse -File -ErrorAction SilentlyContinue
-    }
-
-    $newestMatch = $matches | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    if ($newestMatch) {
-        return $newestMatch.FullName
-    }
-
-    return $null
-}
-
 function Get-BackupManifestData {
     if (-not $script:BackupManifestPath) {
         $script:BackupManifestPath = Find-BackupManifest

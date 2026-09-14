@@ -20,6 +20,36 @@ link root, configure its physical target folder. Backup copying excludes junctio
 restore rejects reparse points inside selected trees. Backup sources, restore
 destinations, and recovered-file locations must not overlap the selected backup.
 
+## Discovery and backup selection
+
+Automatic discovery searches recursively beneath `declarative-windows-backup`
+on each non-system filesystem drive. If it finds nothing, it prints the searched
+locations. Use `restore-backup.ps1 -ManifestPath <file-or-folder>` for a moved
+backup or a different container. Folder selection includes nested backups; an
+explicit file may have any filename.
+
+Discovery displays each candidate's path, recorded machine and profile, recorded
+creation/completion times when present, schema compatibility, and completeness.
+These are reported metadata, not authenticated identity. Current project manifests
+record creation time but no separate completion time. An empty `failures` array
+with no failed, unskipped rules indicates recorded completion. Missing failure
+metadata means unknown completeness. Failed or malformed verification records and
+missing declared payload paths mark a candidate incomplete. Discovery checks path presence,
+not file contents or hashes; restore planning still verifies content before writes.
+
+Automatic selection requires exactly one discovered candidate that is compatible
+and recorded complete, with no search errors. Multiple candidates require an
+explicit manifest file, even if only one is supported or filesystem timestamps
+differ. The same rule applies to a selected folder and unattended runs. Bootstrap
+uses this policy too and keeps its staged setup fallback when no backup is selected.
+
+An explicit supported file can select a legacy or partial backup; the restore
+planner still checks the requested content. An explicit unsupported file fails
+with its compatibility error and never substitutes an older supported backup.
+Discovery does not modify either backup. The separate September snapshot format
+with a string `machine` field is unsupported; a reader for that format is separate
+work from this selection policy.
+
 ## Restore mappings
 
 In backup configuration, `restoreTargets.repoPath` selects the repository restore
