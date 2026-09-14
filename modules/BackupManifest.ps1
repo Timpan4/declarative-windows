@@ -199,6 +199,7 @@ function Assert-BackupConfiguration {
         if ($Config.$collection -isnot [array]) { throw "$collection must be an array." }
         foreach ($entry in $Config.$collection) {
             Assert-BackupObject $entry $collection
+            Assert-BackupApplication $entry.application
             if ($entry.enabled -isnot [bool]) { throw "$collection.enabled must be a boolean." }
             if ($null -ne $entry.required -and $entry.required -isnot [bool]) { throw "$collection.required must be a boolean." }
             Assert-BackupStringList $entry.tags "$collection.tags"
@@ -225,6 +226,18 @@ function Assert-BackupConfiguration {
     }
 }
 
+function Assert-BackupApplication {
+    param([object]$Application)
+    if ($null -eq $Application) { return }
+    Assert-BackupObject $Application 'application'
+    if ($Application.id -isnot [string] -or [string]::IsNullOrWhiteSpace($Application.id)) { throw 'application.id must be a non-empty string.' }
+    Assert-BackupStringList $Application.processNames 'application.processNames'
+    if (-not $Application.processNames.Count) { throw 'application.processNames must name the processes that must be closed.' }
+    foreach ($name in $Application.processNames) {
+        if ($name -match '[\\/:*?"<>|]' -or $name.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) { throw 'application.processNames must contain exact process names without paths, wildcards, or .exe.' }
+    }
+}
+
 function Assert-BackupManifest {
     param([object]$Manifest)
     Assert-BackupObject $Manifest 'Backup manifest'
@@ -239,6 +252,7 @@ function Assert-BackupManifest {
         foreach ($entry in $Manifest.$name) {
             Assert-BackupObject $entry $name
             if ($name -eq 'rules') {
+                Assert-BackupApplication $entry.application
                 if ($entry.success -isnot [bool]) { throw 'rules.success must be a boolean.' }
                 # Earlier v1 producers serialized an absent optional tag list as [null].
                 if ($entry.tags -is [array] -and $entry.tags.Count -eq 1 -and $null -eq $entry.tags[0]) { $entry.tags = @() }

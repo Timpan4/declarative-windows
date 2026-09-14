@@ -29,6 +29,26 @@ BeforeAll {
 Describe 'complete backup file verification' {
     BeforeEach {
         Mock Get-Command { $null } -ParameterFilter { $Name -in @('git', 'winget') }
+        Mock Out-Host {}
+    }
+
+    It 'carries validated application identity and process names into the backup manifest' {
+        $root = Join-Path $TestDrive 'application-metadata'
+        $repo = New-HashFixture $root
+        $configPath = Join-Path $repo 'config\backup.template.json'
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        $config.extraPaths[0] | Add-Member -NotePropertyName application -NotePropertyValue @{ id = 'fixture-app'; processNames = @('fixture-app', 'fixture-helper') }
+        $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+        & (Join-Path $repo 'preflight-backup.ps1') -DestinationRoot (Join-Path $root 'backup') -BackupName 'session' -VerifyHashes -Force
+        $manifestPath = Join-Path $root 'backup\declarative-windows-backup\session\backup-manifest.json'
+        $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+        $manifest.rules[0].application.id | Should -Be 'fixture-app'
+        $manifest.rules[0].application.processNames | Should -Be @('fixture-app', 'fixture-helper')
+        { Assert-BackupManifest $manifest } | Should -Not -Throw
+        $manifest.rules[0].application.processNames = @()
+        { Assert-BackupManifest $manifest } | Should -Throw '*processNames*'
+        $config.extraPaths[0].application.processNames = @('fixture*')
+        { Assert-BackupConfiguration $config } | Should -Throw '*exact process names*'
     }
 
     It 'compares copied content, records every payload hash, and restores after serialization' {
@@ -47,7 +67,10 @@ Describe 'complete backup file verification' {
         $manifest.verification.files.path | Should -Contain 'files\extra-payload\hidden.txt'
         $manifest.verification.files.path | Should -Contain 'repo-files\apps.json'
         $manifest.verification.files.path | Should -Contain 'exports\apps.json'
-        & (Join-Path $repo 'restore-backup.ps1') -ManifestPath $manifestPath
+        $manifest.machine.userProfile = $root
+        $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
+        Mock Read-Host { 'YES' }
+        & (Join-Path $repo 'restore-backup.ps1') -ManifestPath $manifestPath -DestinationProfileRoot $root -UseBackupSettings
         Get-Content (Join-Path $root 'restored-content\nested\file.txt') | Should -Be 'original content'
         Get-Content (Join-Path $root 'restored-repo\apps.json') | Should -Be '{}'
         Test-Path (Join-Path $root 'restored-content\excluded.tmp') | Should -BeFalse

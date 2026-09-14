@@ -50,7 +50,8 @@ Describe 'restore profile mapping' {
             rules = @(@{ success = $true; backupPath = 'content'; restorePath = (Join-Path $oldProfile 'Documents') })
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $session 'backup-manifest.json')
 
-        & (Join-Path $fixtureRepo 'restore-backup.ps1') -ManifestPath (Join-Path $session 'backup-manifest.json') -DestinationProfileRoot $newProfile
+        Mock Read-Host { 'YES' }
+        & (Join-Path $fixtureRepo 'restore-backup.ps1') -ManifestPath (Join-Path $session 'backup-manifest.json') -DestinationProfileRoot $newProfile -UseBackupSettings
 
         Get-Content -LiteralPath (Join-Path $newProfile 'Documents\example.txt') | Should -Be 'user content'
         Get-Content -LiteralPath (Join-Path $newProfile 'repo\apps.json') | Should -Be '{}'

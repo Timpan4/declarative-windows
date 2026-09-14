@@ -71,6 +71,12 @@ winget export -o apps.json --source winget
 
 For personal usage, keep `apps.json`, `optional-apps.json`, and `config\backup.json` out of git. The repo ships `apps-template.json`, `optional-apps-template.json`, and `config\backup.template.json`, and the backup workflow preserves your personal files so they can be restored into the cloned repo after reinstall.
 
+Normal restore keeps current personal files and saves differing backup copies in
+`Recovered from backup`. Backup configuration requires `-UseBackupSettings` and
+confirmation after preview; bootstrap does not apply it automatically. Application
+state requires an explicit app selection with the app closed. See
+[restore modes and selections](docs/BACKUP-FORMAT.md#restore-conflicts-and-selections).
+
 If you want a second-stage app list, create `optional-apps.json` alongside `apps.json`. Start from `optional-apps-template.json` if you want an example. `apps.json` installs automatically during bootstrap, while `optional-apps.json` is offered with a yes/no prompt after first login and can also be installed later from a desktop shortcut.
 
 ### Backup Before Reinstall
