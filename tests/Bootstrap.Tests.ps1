@@ -76,7 +76,7 @@ Describe "bootstrap.ps1 static checks" {
     It "can fall back when repo clone fails" {
         $scriptContent | Should -Match "git"
         $scriptContent | Should -Match "continuing with C:\\Setup"
-        $scriptContent | Should -Match "backup-manifest\.json"
+        $scriptContent | Should -Match "Find-BackupManifest"
     }
 
     It "auto-downloads Sophia Script when missing" {
